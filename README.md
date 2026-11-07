@@ -1,36 +1,81 @@
 # FreeFlow
 
-Free, offline push-to-talk dictation for macOS. Hold a key, talk, let go, and the cleaned-up text is typed into whatever app you are in. A stand-in for Wispr Flow with no word limit, no account and no subscription. Audio never leaves the Mac.
+Free, offline dictation for macOS that does what Wispr Flow does, for you and your team. Hold a key, talk, let go, and clean written text appears wherever your cursor is. No account, no word limit, no subscription. Audio and text never leave the Mac.
 
 ## Use it
 
 | Do this | What happens |
 |---|---|
-| Hold **right ⌥**, talk, let go | Text appears at the cursor |
+| Hold **right ⌥**, talk, let go | Cleaned-up text appears at the cursor |
 | While holding right ⌥, tap **⇧** | Locks hands-free. Let go and keep talking. Tap right ⌥ again to finish |
-| Press **Esc** while recording | Cancels |
-| Tap right ⌥ quickly by accident | Nothing happens |
+| Select text, hold **right ⌃**, say "make this shorter", let go | **Command Mode**: the selection is replaced with the edited version |
+| Hold right ⌃ with nothing selected, say "reply saying I'll be there at 3" | The AI drafts it from the text around your cursor and pastes it |
+| Say "**press enter**" at the end | Pastes, then presses Return (chat apps) |
+| Say "**new paragraph**" | A blank line |
+| Say a **snippet cue** ("my calendar link") | Types the saved expansion |
+| Press **Esc** while recording | Cancels. Typing any other key while holding also cancels (you were using a shortcut) |
 
-Menu bar icon: talk key (right ⌥, Fn, right ⌘, right ⌃), language (English, auto, Chinese, Malay), filler-word removal, sounds, dictionary, history, open at login, word counts.
+Sessions can run 20 minutes. A tap under 0.3 s does nothing, so an accidental tap is harmless.
 
-Text clean-up: removes um/uh, strips Whisper's invented "thank you" on silence, adds a leading space when you continue a sentence, restores your clipboard after pasting.
+### Menu bar
 
-**Dictionary:** `~/Library/Application Support/FreeFlow/dictionary.txt` (menu: Edit dictionary). One word per line teaches Whisper the spelling; `wrong => right` forces a swap.
+Talk key (right ⌥, Fn, right ⌘, right ⌃) · Command Mode key · Language (English, auto, Chinese, Malay, Indonesian, Tamil, Hindi, Japanese, Korean, Spanish, French, German, Vietnamese, Thai) · Auto cleanup level · filler removal · sounds · Teach a word · dictionary, snippets, styles · history · Team · Connect to Claude Code · usage (words today, all time, top apps) · Undo AI edit.
 
-History: `~/Library/Application Support/FreeFlow/history.txt`. Logs: `~/Library/Logs/FreeFlow/`.
+### Auto cleanup (like Wispr's)
 
-## How it works
+| Level | What you get |
+|---|---|
+| None | The raw transcript |
+| Light | Fillers removed, dictionary spellings applied. Rule-based, instant |
+| **Medium** (default) | Light, then the local AI fixes grammar, applies your self-corrections ("budget 50K, actually make that 75K" becomes "budget 75K"), formats spoken lists, and matches the tone to the app: formal in Mail, casual in Slack and WhatsApp, untouched in code editors and AI chat apps |
 
-- `WhisperServer.swift` runs `whisper-server` (Homebrew `whisper-cpp`) as a child process on `127.0.0.1:8178` so the model stays loaded on the GPU. Model: `ggml-large-v3-turbo-q5_0.bin` (574 MB) in `~/Library/Application Support/FreeFlow/models/`. A 10 s clip transcribes in about 0.3 s on an M5 Pro.
-- `Input.swift`: global talk-key monitor (modifier keys), 16 kHz WAV recorder, paste.
-- `Text.swift`: dictionary and clean-up. `Overlay.swift`: the pill. `AppDelegate.swift`: menu bar and state.
+The AI is Qwen 3.5 9B running in [Ollama](https://ollama.com) on your Mac. If Ollama is not running, FreeFlow quietly uses Light and tells you once. A guard rejects AI output that is not the same dictation (an answer instead of a clean-up, a preamble, a rewrite that lost half the words) and pastes the Light version instead. **Undo AI edit** in the menu copies what you actually said. Both versions are kept in `history.jsonl`.
+
+Styles by app: `~/Library/Application Support/FreeFlow/styles.txt` (`bundle.id => formal | casual | neutral | code | plain`).
+
+### Dictionary and snippets
+
+- `dictionary.txt`: one word or name per line teaches Whisper the spelling; `wrong => right` forces a swap. Or use **Teach a word…** in the menu.
+- `snippets.txt`: `cue => expansion`, `\n` for a new line. Cues up to 60 characters, expansions up to 4,000. A dictation that is only the cue becomes the expansion exactly; a cue inside a sentence is replaced in place.
+
+### Team
+
+Pick any folder your whole team syncs (iCloud Drive, Dropbox, the NAS, a git checkout): **menu bar › Team › Choose team folder**. FreeFlow keeps three files there and reads them on every dictation:
+
+| File | Holds |
+|---|---|
+| `team-dictionary.txt` | Shared names, products, jargon, `wrong => right` swaps |
+| `team-snippets.txt` | Shared cues: company address, support sign-off, booking link |
+| `team-styles.txt` | Shared tone per app |
+
+A person's own entry wins when it clashes with a team entry, the same rule Wispr uses. `team-example/` in this repo is a starter set. Optional: **Share my word counts with the team** writes `usage/<name>.json` into the folder so the Team menu shows everyone's totals; it is off by default.
+
+### Connect to Claude Code (MCP)
+
+Like Wispr's connector, but local and for your dictations. **Menu › Connect to Claude Code** copies the command:
+
+```bash
+claude mcp add --scope user freeflow -- /usr/bin/env python3 "/Applications/FreeFlow.app/Contents/Resources/freeflow-mcp.py"
+```
+
+Tools: `search_history`, `recent_dictations`, `get_dictionary`, `get_snippets`, `get_usage`, `add_dictionary_word`, `add_snippet`. Standard-library Python, stdio, nothing leaves the Mac. Works with any MCP client that can run a local command.
+
+## Install (teammates)
+
+1. Unzip `FreeFlow-<version>.zip`.
+2. Run `./install.sh` (adds `--with-ai` to also install Ollama and the 7.6 GB AI model). It installs whisper.cpp with Homebrew, downloads the 574 MB speech model and verifies its checksum, copies the app to /Applications and clears the download flag so macOS opens it.
+3. On first launch allow **Microphone** and **Accessibility**. Without Accessibility FreeFlow still transcribes and copies to the clipboard, but cannot press ⌘V for you.
+4. Menu bar › Team › Choose team folder.
+
+The app is signed with a development certificate, not a notarised Developer ID, which is why step 2 clears the quarantine flag. Notarising needs a paid Developer ID; `build.sh` already prefers one when it exists.
 
 ## Build
 
 ```bash
 brew install whisper-cpp
-./build.sh            # builds build/FreeFlow.app
+./build.sh            # builds build/FreeFlow.app and runs the text checks
 ./build.sh install    # also copies to /Applications and launches
+./build.sh release    # also makes dist/FreeFlow-<version>.zip with install.sh
 ```
 
 Model download (verify the checksum):
@@ -40,25 +85,36 @@ curl -L -o ggml-large-v3-turbo-q5_0.bin https://huggingface.co/ggerganov/whisper
 # sha256 394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2
 ```
 
-Sign with a real identity (build.sh picks the first one it finds) so macOS keeps the Microphone and Accessibility grants across rebuilds. Ad-hoc signing works but resets them every build.
+## How it works
 
-First launch asks for **Microphone** and **Accessibility**. Without Accessibility FreeFlow still transcribes and copies to the clipboard, but cannot press ⌘V for you.
+- `WhisperServer.swift` runs `whisper-server` (Homebrew `whisper-cpp`) on `127.0.0.1:8178` so the model stays loaded on the GPU. A 10 s clip transcribes in about 0.3 s.
+- `Rewriter.swift` talks to Ollama on `127.0.0.1:11434` (`think: false`, temperature 0, keep-alive 60 min, warmed at launch). A 40-word clean-up takes about 0.8 s. See `docs/MEASUREMENTS.md`.
+- `Input.swift`: talk-key and command-key monitors, 16 kHz WAV recorder, paste and ⌘C-with-clipboard-restore, selection reading through Accessibility.
+- `Text.swift`: dictionary, rule-based clean-up, spoken commands. `Snippets.swift`: snippets, styles, the team folder. `Overlay.swift`: the pill. `AppDelegate.swift`: menu bar and the pipeline.
+- Pipeline per dictation: Whisper → rules (or raw for None) → snippets → spoken commands → AI (Medium only, skipped when a snippet fired or the app's style is plain) → paste in spoken order.
 
-## Self-test (no microphone needed)
+## Checks
 
 ```bash
-/Applications/FreeFlow.app/Contents/MacOS/FreeFlow --selftest clip.wav [en|auto|zh|ms]
+build/FreeFlow.app/Contents/MacOS/FreeFlow --test                 # text pipeline, 28 checks
+build/FreeFlow.app/Contents/MacOS/FreeFlow --test-ai "um so we should budget 50k actually 75k" formal
+build/FreeFlow.app/Contents/MacOS/FreeFlow --selftest clip.wav [en|auto|zh|...]
+python3 scripts/freeflow-mcp.py --selfcheck
 ```
+
+Live test without a human at the mic: `defaults write com.momominibot.freeflow debugTriggers -bool true`, then `FreeFlow --debug-post down|up|command|lock|paste` while `say` plays through the speakers into the built-in mic. Make sure the target text field has keyboard focus (click in it, or ⌘A) and that nobody is typing: any key press while the key is held cancels the recording.
 
 ## Lessons that cost time
 
 - **⌘V must be sent as the full physical sequence** (Command down, V down, V up, Command up, with the left-command device bit 0x08). A lone "V with Command flag" event is silently ignored by apps on macOS 26.
-- **Do not use double-tap Option.** The Claude desktop app owns it (Quick Entry) and opens a full-screen window that steals focus from the text field. Hands-free is Shift-while-holding instead.
-- `--status` run from a shell reports the shell's permissions, not the app's. Test the installed app by actually using it.
-- Test-harness note: a bare NSWindow with no Edit menu ignores ⌘V; give it one.
-- Whisper is told the language explicitly (`en`) because auto-detect on short clips is shaky. Use the Language menu for Chinese or Malay.
+- **Do not use double-tap Option.** The Claude desktop app owns it (Quick Entry). Hands-free is Shift-while-holding instead.
+- `--status` run from a shell reports the shell's permissions, not the app's. Test the installed app by using it.
+- A window created by AppleScript (`make new document`) has no first responder until something focuses it; a paste into it goes nowhere.
+- Whisper is told the language explicitly because auto-detect on short clips is shaky.
+- The AI once added a "$" that was never spoken; the prompt now forbids adding symbols and the guard rejects rewrites that drift.
 
 ## Not done
 
-- Not tested with a human voice into the physical microphone; tests played speech through the speakers into the built-in mic and used simulated key presses.
-- No cloud rewrite or tone change like Wispr's AI edits. It is transcription plus rule-based clean-up.
+- Notetaker (meeting recording), mobile apps, Voice Profile and Perplexity search are Wispr features FreeFlow does not have.
+- Auto-learning a word when you correct it by typing is not built; use Teach a word.
+- Not tested with a human voice into the physical microphone; tests played speech through the speakers.

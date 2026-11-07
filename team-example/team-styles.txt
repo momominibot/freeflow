@@ -1,0 +1,6 @@
+# Team styles:  bundle.id => formal | casual | neutral | code | plain
+# The tone the AI clean-up aims for in each app. "plain" turns the AI rewrite off in that app.
+# Find a bundle id with:  osascript -e 'id of app "Slack"'
+
+com.apple.Notes => casual
+com.linear => neutral

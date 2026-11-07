@@ -44,16 +44,22 @@ struct Vocabulary {
         }
     }
 
+    /// The personal dictionary only. `Personalization.load()` adds the team's.
     static func load() -> Vocabulary {
+        parse((try? String(contentsOf: Paths.dictionary, encoding: .utf8)) ?? "")
+    }
+
+    static func parse(_ text: String) -> Vocabulary {
         var v = Vocabulary()
-        guard let text = try? String(contentsOf: Paths.dictionary, encoding: .utf8) else { return v }
+        var seenWrong = Set<String>()
         for raw in text.components(separatedBy: .newlines) {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.isEmpty || line.hasPrefix("#") { continue }
             if let arrow = line.range(of: "=>") {
                 let wrong = line[..<arrow.lowerBound].trimmingCharacters(in: .whitespaces)
                 let right = line[arrow.upperBound...].trimmingCharacters(in: .whitespaces)
-                guard !wrong.isEmpty else { continue }
+                guard !wrong.isEmpty, !seenWrong.contains(wrong.lowercased()) else { continue }
+                seenWrong.insert(wrong.lowercased())
                 var pattern = NSRegularExpression.escapedPattern(for: wrong)
                 if wrong.first.map({ $0.isLetter || $0.isNumber }) == true { pattern = "\\b" + pattern }
                 if wrong.last.map({ $0.isLetter || $0.isNumber }) == true { pattern += "\\b" }
@@ -71,6 +77,18 @@ struct Vocabulary {
     func apply(_ s: String) -> String {
         replacements.reduce(s) { text, rule in
             rule.0.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: rule.1)
+        }
+    }
+
+    /// Appends a word (or `wrong => right`) to the personal dictionary file.
+    static func add(_ line: String) {
+        ensureFile()
+        let clean = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, let data = ("\n" + clean + "\n").data(using: .utf8) else { return }
+        if let h = try? FileHandle(forWritingTo: Paths.dictionary) {
+            h.seekToEndOfFile()
+            h.write(data)
+            try? h.close()
         }
     }
 }
@@ -108,12 +126,50 @@ enum TextCleaner {
         return t
     }
 
+    /// Only the hallucination filter and bracket noise, for the "None" cleanup level.
+    static func raw(_ raw: String, quiet: Bool) -> String {
+        var t = raw.replacingOccurrences(of: "\n", with: " ")
+        t = sub(t, #"\[[^\]]*\]"#, "")
+        t = sub(t, #"\s{2,}"#, " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        if quiet {
+            let key = t.lowercased().filter { $0.isLetter || $0 == " " }.trimmingCharacters(in: .whitespaces)
+            if hallucinations.contains(key) { return "" }
+        }
+        return t
+    }
+
     static func wordCount(_ s: String) -> Int {
         s.split(whereSeparator: { $0.isWhitespace }).count
     }
 
-    private static func sub(_ s: String, _ pattern: String, _ template: String) -> String {
+    static func sub(_ s: String, _ pattern: String, _ template: String) -> String {
         guard let re = try? NSRegularExpression(pattern: pattern) else { return s }
         return re.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: template)
+    }
+}
+
+/// Things you can say at the end of a dictation, like Wispr Flow's "press enter".
+struct SpokenCommands {
+    var text: String
+    var pressEnter = false
+
+    static func parse(_ input: String) -> SpokenCommands {
+        var out = SpokenCommands(text: input)
+        var t = input
+        // "... press enter" / "hit return" / "send it" at the very end sends the message after pasting.
+        // A command must start its own clause: the whole dictation, or right after . ! ? , ; so "and then press enter"
+        // inside a sentence is left alone. The sentence's own full stop before the command is kept; a comma is dropped.
+        let enter = #"(?i)(?:^|(?<=[.!?])|,|;)\s*(?:press|hit)\s+(?:enter|return)\b[.!]?\s*$"#
+        if TextCleaner.sub(t, enter, "\u{1}").hasSuffix("\u{1}") {
+            out.pressEnter = true
+            t = TextCleaner.sub(t, enter, "")
+        }
+        // "new paragraph" as its own clause becomes a blank line; "new line" only at the end, since it is an ordinary phrase too.
+        t = TextCleaner.sub(t, #"(?i)(?:^|(?<=[.!?])|,|;)\s*new paragraph\b[,.]?\s*"#, "\n\n")
+        t = TextCleaner.sub(t, #"(?i)(?:^|(?<=[.!?])|,|;)\s*new line\b[.!]?\s*$"#, "\n")
+        t = t.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+        out.text = t.trimmingCharacters(in: .whitespaces)
+        if out.text.hasSuffix("\n") == false { out.text = out.text.trimmingCharacters(in: .newlines) }
+        return out
     }
 }

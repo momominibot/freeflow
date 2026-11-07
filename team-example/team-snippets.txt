@@ -1,0 +1,6 @@
+# Team snippets:  cue => expansion   (\n for a new line)
+# Say the cue while dictating and FreeFlow types the expansion. Cues are matched on whole words, ignoring case.
+
+company address => Ranklore Pte. Ltd., Singapore
+support signoff => Thanks for reaching out. If anything is unclear, reply to this email and we will sort it out.\n\nThe Ranklore team
+booking link => You can pick a time that suits you here: https://cal.com/ranklore/intro

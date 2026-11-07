@@ -2,13 +2,13 @@ import AppKit
 import AVFoundation
 import ApplicationServices
 
-/// Watches the talk key. Needs Accessibility permission to see keys pressed in other apps.
+/// Watches one held key. Needs Accessibility permission to see keys pressed in other apps.
 final class HotkeyMonitor {
     var key: TalkKey = .rightOption { didSet { isDown = false } }
     var onDown: (() -> Void)?
     var onUp: (() -> Void)?
     var onKeyDown: ((UInt16) -> Void)?
-    /// Shift tapped while the talk key is held: lock into hands-free mode.
+    /// Shift tapped while the key is held: lock into hands-free mode.
     var onLock: (() -> Void)?
 
     private var monitors: [Any] = []
@@ -127,18 +127,21 @@ final class Recorder {
 enum Inserter {
     private static let transient = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
 
-    static func paste(_ text: String) {
+    /// Pastes, then gives the clipboard back and calls `completion`. Callers run one paste at a time.
+    static func paste(_ text: String, completion: @escaping () -> Void = {}) {
         let pb = NSPasteboard.general
         let saved = snapshot(pb)
         pb.clearContents()
         pb.setString(text, forType: .string)
         pb.setData(Data(), forType: transient)
         let mine = pb.changeCount
-        postCommandV()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            guard pb.changeCount == mine else { return }
-            pb.clearContents()
-            if !saved.isEmpty { pb.writeObjects(saved) }
+        postShortcut(key: 9) // ⌘V
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            if pb.changeCount == mine {
+                pb.clearContents()
+                if !saved.isEmpty { pb.writeObjects(saved) }
+            }
+            completion()
         }
     }
 
@@ -148,15 +151,60 @@ enum Inserter {
         pb.setString(text, forType: .string)
     }
 
+    /// Presses Return, for "press enter" at the end of a dictation.
+    static func pressReturn() {
+        let src = CGEventSource(stateID: .combinedSessionState)
+        DispatchQueue.global(qos: .userInteractive).async {
+            CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: true)?.post(tap: .cghidEventTap)
+            usleep(15_000)
+            CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: false)?.post(tap: .cghidEventTap)
+        }
+    }
+
+    /// What the user has selected and what is around the cursor, for Command Mode.
+    /// Reads through Accessibility first; when the app does not expose its selection, copies it with ⌘C and restores the clipboard.
+    struct Focus {
+        var selection = ""
+        var context = ""
+        var editable = false
+    }
+
+    static func readFocus(completion: @escaping (Focus) -> Void) {
+        var f = Focus()
+        if let el = focusedElement() {
+            var roleRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &roleRef)
+            let role = roleRef as? String ?? ""
+            // A web page is AXWebArea too, but only an editable field should receive a paste.
+            f.editable = ["AXTextField", "AXTextArea", "AXComboBox"].contains(role) || isSettable(el)
+            var sel: CFTypeRef?
+            if AXUIElementCopyAttributeValue(el, kAXSelectedTextAttribute as CFString, &sel) == .success, let s = sel as? String {
+                f.selection = s
+            }
+            var val: CFTypeRef?
+            if AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &val) == .success, let v = val as? String {
+                f.context = String(v.suffix(6000))
+            }
+        }
+        if !f.selection.isEmpty { return completion(f) }
+        // Fall back to ⌘C: many Electron and browser fields do not expose AXSelectedText.
+        let pb = NSPasteboard.general
+        let saved = snapshot(pb)
+        let before = pb.changeCount
+        postShortcut(key: 8) // ⌘C
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            if pb.changeCount != before, let s = pb.string(forType: .string), !s.isEmpty {
+                f.selection = s
+                pb.clearContents()
+                if !saved.isEmpty { pb.writeObjects(saved) }
+            }
+            completion(f)
+        }
+    }
+
     /// True when the character before the cursor is not whitespace, so a space is needed.
     static func needsLeadingSpace() -> Bool {
-        let system = AXUIElementCreateSystemWide()
-        AXUIElementSetMessagingTimeout(system, 0.15)
-        var focused: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
-              let f = focused, CFGetTypeID(f) == AXUIElementGetTypeID() else { return false }
-        let el = f as! AXUIElement
-        AXUIElementSetMessagingTimeout(el, 0.15)
+        guard let el = focusedElement() else { return false }
         var rangeRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
               let rv = rangeRef, CFGetTypeID(rv) == AXValueGetTypeID() else { return false }
@@ -186,6 +234,24 @@ enum Inserter {
         return !c.isWhitespace && !"([{\"'“‘/-".contains(c)
     }
 
+    // MARK: - Internals
+
+    private static func focusedElement() -> AXUIElement? {
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, 0.15)
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let f = focused, CFGetTypeID(f) == AXUIElementGetTypeID() else { return nil }
+        let el = f as! AXUIElement
+        AXUIElementSetMessagingTimeout(el, 0.15)
+        return el
+    }
+
+    private static func isSettable(_ el: AXUIElement) -> Bool {
+        var settable = DarwinBoolean(false)
+        return AXUIElementIsAttributeSettable(el, kAXValueAttribute as CFString, &settable) == .success && settable.boolValue
+    }
+
     private static func snapshot(_ pb: NSPasteboard) -> [NSPasteboardItem] {
         (pb.pasteboardItems ?? []).map { item in
             let copy = NSPasteboardItem()
@@ -196,9 +262,9 @@ enum Inserter {
         }
     }
 
-    /// Sends ⌘V the way a real keyboard does. On current macOS a lone "V with Command flag" event is
-    /// ignored by many apps; pressing Command itself first, then V, then releasing both, is not.
-    private static func postCommandV() {
+    /// Sends ⌘+key the way a real keyboard does. On current macOS a lone "key with Command flag" event is
+    /// ignored by many apps; pressing Command itself first, then the key, then releasing both, is not.
+    private static func postShortcut(key: CGKeyCode) {
         let src = CGEventSource(stateID: .combinedSessionState)
         let leftCommand = CGEventFlags(rawValue: CGEventFlags.maskCommand.rawValue | 0x08)
         func send(_ code: CGKeyCode, down: Bool, flags: CGEventFlags) {
@@ -209,9 +275,9 @@ enum Inserter {
         DispatchQueue.global(qos: .userInteractive).async {
             send(55, down: true, flags: leftCommand)
             usleep(15_000)
-            send(9, down: true, flags: leftCommand)
+            send(key, down: true, flags: leftCommand)
             usleep(15_000)
-            send(9, down: false, flags: leftCommand)
+            send(key, down: false, flags: leftCommand)
             usleep(15_000)
             send(55, down: false, flags: [])
         }

@@ -92,12 +92,12 @@ final class Overlay {
         bars.push(CGFloat(v))
     }
 
-    func showTranscribing() {
+    func showTranscribing(label text: String = "Transcribing…") {
         cancelHide()
         bars.isHidden = true
         spinner.isHidden = false
         spinner.startAnimation(nil)
-        label.stringValue = "Transcribing…"
+        label.stringValue = text
         layoutAndShow()
     }
 
@@ -112,6 +112,9 @@ final class Overlay {
         hideItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: item)
     }
+
+    /// True while a timed message is on screen, so callers do not hide it early.
+    var isFlashing: Bool { hideItem != nil }
 
     func hide() {
         cancelHide()

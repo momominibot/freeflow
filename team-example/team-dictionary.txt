@@ -1,0 +1,17 @@
+# Team dictionary: names, products, jargon. One per line, or  wrong => right
+# Everyone who points FreeFlow at this folder gets these spellings. A person's own dictionary wins on conflicts.
+
+Ranklore
+EMIS+
+reinstate.sg
+Rhythme
+Wellness Protocol
+Sen & Fascia
+Pets Crystal
+Higgsfield
+Seedream
+Doubao
+
+Rank Lore => Ranklore
+RankLore => Ranklore
+E-mis => EMIS
