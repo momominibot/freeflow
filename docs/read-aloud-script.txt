@@ -1,0 +1,30 @@
+我们明天要 send the invoice 给 Ranklore，然后 update 一下 Shopify 的 theme。
+这个 quote 帮我 follow up，客户说 budget 有点 tight。
+下午三点的 meeting 改到四点，记得 book 会议室。
+请你帮我 check 一下 Wellness Protocol 的 reviews，看看有没有 bad feedback。
+今天的 hacking works 要先 notify neighbours，不然 HDB 会罚款。
+我现在在 MRT 上，到了公司再 call 你。
+这个 bug 我昨天已经 fix 了，你 refresh 一下页面看看。
+老板说这个星期五之前一定要 submit，所以今天要 rush 一下。
+你可以 send 我那个 PDF 吗？我晚上再 review。
+周末我们去 hawker centre 吃饭，你想吃 chicken rice 还是 laksa？
+客人想要 refund，但是已经超过 fourteen days 了，怎么办？
+这个 landing page 的 headline 太长了，改短一点，要 punchy 一点。
+Can you help me check the quote first, then we decide lah.
+Aiyo, the client changed the brief again, so we need to redo everything.
+I already told him the deadline is Friday, but he still never reply leh.
+This one very simple only, just copy the file and paste into the folder.
+Wah, the hacking works today damn noisy, I cannot concentrate.
+Later we go makan first, then come back to finish the proposal, can?
+Don't worry, I will follow up with the contractor and update you by tomorrow.
+Eh, the Wellness Protocol page loading quite slow, you help me look see look see.
+Please commit the change, not commute, and push it to the main branch after the tests pass.
+Send the Ranklore proposal to the client by Thursday and copy the finance team.
+We should keep the budget tight and review it again in January.
+Update the Supabase policy, redeploy to Vercel, and then check the Shopify checkout again.
+The meeting is at noon, so please book the small room upstairs.
+Remind me to renew the domain before the end of the month.
+明天下午三点开会，记得带电脑和充电器。
+这个星期的销售报告我已经发给你了，请查收。
+我觉得这个方案可以，不过价格还要再谈一谈。
+麻烦你把客户的资料整理一下，今天下班前发给我。

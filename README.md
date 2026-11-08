@@ -71,7 +71,7 @@ To test on your own voice instead of trusting benchmarks: tick **Keep my recordi
 
     ~/Library/Application\ Support/FreeFlow/engines/qwen/venv/bin/python scripts/compare-engines.py -o report.md
 
-It runs every kept take through both engines side by side. Add `"truth": "what you actually said"` to a take's `.json` and it scores word error for both. **Delete saved recordings** in the same menu removes them all.
+It runs every kept take through both engines side by side. For a ready-made test, read the 30 sentences in `docs/read-aloud-script.md` (English, Singapore English and Chinese mixed) and add `--script docs/read-aloud-script.txt`: the right answers are then known and both engines are scored per English word and Chinese character. Add `"truth": "what you actually said"` to a take's `.json` and it scores word error for both. **Delete saved recordings** in the same menu removes them all.
 
 **Mixed English and Chinese.** Pick Language › *English + Chinese (mixed)*. Whisper then detects per recording and the Qwen engine is told "Chinese", which keeps English words as spoken (left on auto-detect it once translated the Chinese half of a sentence into English). The clean-up AI is told never to translate, and its safety check now rejects any rewrite that loses the Chinese characters or turns English into Chinese. Tested on computer-generated speech only; real Singapore speech is the next test (use "Keep my recordings").
 
