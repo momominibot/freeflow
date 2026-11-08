@@ -19,7 +19,7 @@ Sessions can run 20 minutes. A tap under 0.3 s does nothing, so an accidental ta
 
 ### Menu bar
 
-Talk key (right ⌥, Fn, right ⌘, right ⌃) · Command Mode key · Language (English, auto, Chinese, Malay, Indonesian, Tamil, Hindi, Japanese, Korean, Spanish, French, German, Vietnamese, Thai) · Auto cleanup level · filler removal · sounds · Teach a word · dictionary, snippets, styles · history · Team · Connect to Claude Code · usage (words today, all time, top apps) · Undo AI edit.
+Talk key (right ⌥, Fn, right ⌘, right ⌃) · Command Mode key · Language (English, auto, Chinese, Malay, Indonesian, Tamil, Hindi, Japanese, Korean, Spanish, French, German, Vietnamese, Thai) · Auto cleanup level · filler removal · sounds · Learning (learn from my corrections, correct my last dictation, show or forget what it learned) · Teach a word · dictionary, snippets, styles · history · Team · Connect to Claude Code · usage (words today, all time, top apps) · Undo AI edit.
 
 ### Auto cleanup (like Wispr's)
 
@@ -32,6 +32,19 @@ Talk key (right ⌥, Fn, right ⌘, right ⌃) · Command Mode key · Language (
 The AI is Qwen 3.5 9B running in [Ollama](https://ollama.com) on your Mac. If Ollama is not running, FreeFlow quietly uses Light and tells you once. A guard rejects AI output that is not the same dictation (an answer instead of a clean-up, a preamble, a rewrite that lost half the words) and pastes the Light version instead. **Undo AI edit** in the menu copies what you actually said. Both versions are kept in `history.jsonl`.
 
 Styles by app: `~/Library/Application Support/FreeFlow/styles.txt` (`bundle.id => formal | casual | neutral | code | plain`).
+
+### It learns your words
+
+Fix a word in the text FreeFlow typed and it remembers, with nothing else to do. This is lexical learning, the same idea as Volcengine's hotwords and self-learning: your own words, names and spellings are fed back to the engine. It does not retrain the speech model's weights.
+
+How it works:
+
+1. After FreeFlow types, it reads that one text box for up to a minute (needs Accessibility, skips password fields) only to see which words you changed. Nothing is kept except the word pairs, in `learned.txt` on this Mac.
+2. A change counts only if it looks like a speech slip: not a rewrite of most of the text, not a number change, not a sentence-start capital. "Rank Lore" to "Ranklore", "emis" to "EMIS", "Shopfy" to "Shopify" count.
+3. What you meant joins the prompt both engines get (Whisper's prompt, Qwen's context), so it is heard right next time. The pair also becomes an automatic swap once it has enough votes: a made-up word like "Ranklor" after 1 fix, a phrase or Chinese after 2, a real English word like "their" after 3, so one fix cannot rewrite normal text. Your own `dictionary.txt` always wins over a learned swap.
+4. Where an app does not let FreeFlow read its text box, use **Learning > Correct my last dictation…**. That counts double, so a swap can start at once.
+
+`learned.txt` is plain text. Delete a line to forget it, or use **Forget everything it learned**. Single fixes fade after about six months. Turn the whole thing off with **Learning > Learn from my corrections**.
 
 ### Dictionary and snippets
 
@@ -133,5 +146,6 @@ Live test without a human at the mic: `defaults write com.momominibot.freeflow d
 ## Not done
 
 - Notetaker (meeting recording), mobile apps, Voice Profile and Perplexity search are Wispr features FreeFlow does not have.
-- Auto-learning a word when you correct it by typing is not built; use Teach a word.
+- Learning is lexical (words and swaps). Retraining the speech model on your voice from your kept recordings and corrections is not built; it would be a separate, heavier step.
+- Learning from fixes was tested live against TextEdit and by unit checks, not yet across browsers, Slack or Electron apps; where an app hides its text, use Correct my last dictation.
 - Not tested with a human voice into the physical microphone; tests played speech through the speakers.

@@ -202,6 +202,30 @@ enum Inserter {
         }
     }
 
+    /// The focused text box, its whole text and where the cursor is. Nil for password fields and anything unreadable.
+    static func caretSnapshot() -> (element: AXUIElement, value: String, caret: Int)? {
+        guard let el = focusedElement() else { return nil }
+        var roleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &roleRef)
+        var subroleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(el, kAXSubroleAttribute as CFString, &subroleRef)
+        if (roleRef as? String) == "AXSecureTextField" || (subroleRef as? String) == "AXSecureTextField" { return nil }
+        guard let value = readValue(el) else { return nil }
+        var rangeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
+              let rv = rangeRef, CFGetTypeID(rv) == AXValueGetTypeID() else { return nil }
+        var range = CFRange()
+        guard AXValueGetValue(rv as! AXValue, .cfRange, &range), range.length == 0 else { return nil }
+        return (el, value, range.location)
+    }
+
+    static func readValue(_ el: AXUIElement) -> String? {
+        AXUIElementSetMessagingTimeout(el, 0.15)
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &ref) == .success else { return nil }
+        return ref as? String
+    }
+
     /// True when the character before the cursor is not whitespace, so a space is needed.
     static func needsLeadingSpace() -> Bool {
         guard let el = focusedElement() else { return false }
@@ -236,15 +260,21 @@ enum Inserter {
 
     // MARK: - Internals
 
+    /// The text box with the cursor. Asks the whole system first; when that says "cannot complete" (it does for some
+    /// processes), asks the app in front directly, which answers the same question.
     private static func focusedElement() -> AXUIElement? {
-        let system = AXUIElementCreateSystemWide()
-        AXUIElementSetMessagingTimeout(system, 0.15)
-        var focused: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
-              let f = focused, CFGetTypeID(f) == AXUIElementGetTypeID() else { return nil }
-        let el = f as! AXUIElement
-        AXUIElementSetMessagingTimeout(el, 0.15)
-        return el
+        func focus(of root: AXUIElement) -> AXUIElement? {
+            AXUIElementSetMessagingTimeout(root, 0.15)
+            var focused: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(root, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+                  let f = focused, CFGetTypeID(f) == AXUIElementGetTypeID() else { return nil }
+            let el = f as! AXUIElement
+            AXUIElementSetMessagingTimeout(el, 0.15)
+            return el
+        }
+        if let el = focus(of: AXUIElementCreateSystemWide()) { return el }
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        return focus(of: AXUIElementCreateApplication(app.processIdentifier))
     }
 
     private static func isSettable(_ el: AXUIElement) -> Bool {

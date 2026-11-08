@@ -5,6 +5,7 @@ enum Paths {
     static let support = home.appendingPathComponent("Library/Application Support/FreeFlow", isDirectory: true)
     static let model = support.appendingPathComponent("models/ggml-large-v3-turbo-q5_0.bin")
     static let dictionary = support.appendingPathComponent("dictionary.txt")
+    static let learned = support.appendingPathComponent("learned.txt")
     static let snippets = support.appendingPathComponent("snippets.txt")
     static let styles = support.appendingPathComponent("styles.txt")
     static let history = support.appendingPathComponent("history.txt")
@@ -124,6 +125,12 @@ final class Settings {
     var keepTakes: Bool {
         get { d.bool(forKey: "keepTakes") }
         set { d.set(newValue, forKey: "keepTakes") }
+    }
+
+    /// Learn words from the corrections you make to text FreeFlow typed. On by default; the pairs stay in learned.txt.
+    var learnFromFixes: Bool {
+        get { d.object(forKey: "learnFromFixes") as? Bool ?? true }
+        set { d.set(newValue, forKey: "learnFromFixes") }
     }
 
     /// Command Mode key. Held alone, like the talk key, never a chord.

@@ -47,6 +47,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var aiNoted = false
     private var installingQwen = false
 
+    /// Watches the text box FreeFlow just typed into, to learn from the words you fix.
+    private lazy var corrections: CorrectionWatcher = {
+        let w = CorrectionWatcher()
+        w.onLearned = { [weak self] pairs in self?.announceLearned(pairs) }
+        return w
+    }()
+
     private static let tapThreshold: TimeInterval = 0.3
     private static let maxLength: TimeInterval = 20 * 60
 
@@ -419,6 +426,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // A command replaces the selection, so no leading space; a dictation continues the sentence.
         let text = o.mode == "command" ? o.text : (Inserter.needsLeadingSpace() ? " " + o.text : o.text)
         Inserter.paste(text) {
+            // Look at the box before Return can clear it, so a fixed word can be learned.
+            if o.mode != "command" { self.corrections.begin(pasted: text) }
             if o.pressEnter { Inserter.pressReturn() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: completion)
         }
@@ -597,6 +606,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sounds.state = settings.sounds ? .on : .off
         menu.addItem(sounds)
         menu.addItem(.separator())
+
+        let learnMenu = NSMenu()
+        let learnOn = item("Learn from my corrections", #selector(toggleLearning))
+        learnOn.state = settings.learnFromFixes ? .on : .off
+        learnMenu.addItem(learnOn)
+        let learnedNow = LearnedFile.load()
+        learnMenu.addItem(info("So far: \(learnedNow.fixes.count) fixes · \(learnedNow.terms.count) words"))
+        learnMenu.addItem(.separator())
+        learnMenu.addItem(item("Correct my last dictation…", #selector(correctLast)))
+        learnMenu.addItem(item("Show what FreeFlow learned…", #selector(showLearned)))
+        learnMenu.addItem(item("Forget everything it learned", #selector(forgetLearned)))
+        learnMenu.addItem(.separator())
+        learnMenu.addItem(info("Fix a word in the text FreeFlow typed, and it remembers"))
+        learnMenu.addItem(info("It reads that text box for about a minute, never password fields"))
+        learnMenu.addItem(info("Only the word pairs are kept, in learned.txt on this Mac"))
+        menu.addItem(submenu("Learning", learnMenu))
 
         menu.addItem(item("Teach a word…", #selector(teachWord)))
         menu.addItem(item("Edit dictionary…", #selector(editDictionary)))
@@ -799,6 +824,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.window.initialFirstResponder = field
         if alert.runModal() == .alertFirstButtonReturn {
             Vocabulary.add(field.stringValue)
+        }
+    }
+
+    @objc private func toggleLearning() { settings.learnFromFixes.toggle() }
+
+    private func announceLearned(_ pairs: [Learning.Pair]) {
+        let shown = pairs.prefix(2).map { "\($0.wrong) → \($0.right)" }.joined(separator: ", ")
+        overlay.flash("Learned: \(shown)\(pairs.count > 2 ? " +\(pairs.count - 2) more" : "")", seconds: 3)
+        log("learned \(pairs.count) fix(es) from a correction")
+    }
+
+    /// For apps that do not let FreeFlow read the text box, or a fix made later: edit the last dictation here.
+    @objc private func correctLast() {
+        guard let last = lastOutcome, !last.text.isEmpty, last.mode != "command" else {
+            overlay.flash("Nothing dictated yet to correct", seconds: 2)
+            return
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Correct my last dictation"
+        alert.informativeText = "Fix the words that were wrong. FreeFlow remembers them next time. Change a word or two, not the whole sentence."
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 460, height: 110))
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        let tv = NSTextView(frame: scroll.bounds)
+        tv.string = last.text
+        tv.isRichText = false
+        tv.font = .systemFont(ofSize: 13)
+        tv.isVerticallyResizable = true
+        tv.autoresizingMask = [.width]
+        tv.textContainer?.widthTracksTextView = true
+        scroll.documentView = tv
+        alert.accessoryView = scroll
+        alert.addButton(withTitle: "Learn")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = tv
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        // Saying "this is wrong" in so many words counts double, so a swap can start right away.
+        let pairs = Learning.learn(Learning.pairs(original: last.text, edited: tv.string), weight: 2)
+        if pairs.isEmpty {
+            overlay.flash("Nothing to learn from that change", seconds: 2.5)
+        } else {
+            announceLearned(pairs)
+        }
+    }
+
+    @objc private func showLearned() {
+        if !FileManager.default.fileExists(atPath: Paths.learned.path) { LearnedFile().save() }
+        NSWorkspace.shared.open(Paths.learned)
+    }
+
+    @objc private func forgetLearned() {
+        let f = LearnedFile.load()
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Forget everything FreeFlow learned?"
+        alert.informativeText = "This removes \(f.fixes.count) fixes and \(f.terms.count) words learned from your corrections. Your own dictionary is not touched."
+        alert.addButton(withTitle: "Forget")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            try? FileManager.default.removeItem(at: Paths.learned)
         }
     }
 

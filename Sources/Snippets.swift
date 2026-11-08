@@ -91,6 +91,9 @@ struct Personalization {
         }
 
         p.vocab = Vocabulary.parse(dictText)
+        if Settings.shared.learnFromFixes {
+            p.vocab.addLearned(LearnedFile.load(), isCommon: Learning.isEnglishWord)
+        }
         Snippet.parse(snippetText, into: &p.snippets)
         p.styles = Self.parseStyles(styleText)
         return p

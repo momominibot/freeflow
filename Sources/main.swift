@@ -140,8 +140,93 @@ if args.contains("--test") {
     try? FileManager.default.removeItem(at: fake)
     check("engine setting parses", SpeechEngine(rawValue: "qwen") == .qwen && SpeechEngine(rawValue: "nonsense") == nil)
 
+    // Learning from corrections.
+    func P(_ w: String, _ r: String) -> Learning.Pair { Learning.Pair(wrong: w, right: r) }
+    check("learn: tokens keep EMIS+ and reinstate.sg whole", Learning.tokenize("Call EMIS+ at reinstate.sg, ok.").map { $0.text } == ["Call", "EMIS+", "at", "reinstate.sg", "ok"])
+    check("learn: tokens split Chinese per character", Learning.tokenize("我们 send 给 Ranklore的").map { $0.text } == ["我", "们", "send", "给", "Ranklore", "的"])
+    check("learn: spacing fix", Learning.pairs(original: "Call Rank Lore about the plan", edited: "Call Ranklore about the plan") == [P("Rank Lore", "Ranklore")])
+    check("learn: misheard word", Learning.pairs(original: "Please open the Ranklor dashboard today", edited: "Please open the Ranklore dashboard today") == [P("Ranklor", "Ranklore")])
+    check("learn: acronym case", Learning.pairs(original: "we sell through emis every day", edited: "we sell through EMIS every day") == [P("emis", "EMIS")])
+    check("learn: sentence-start capital is not a fix", Learning.pairs(original: "we should go now", edited: "We should go now").isEmpty)
+    check("learn: number change is content, not a slip", Learning.pairs(original: "pay alice 50k today", edited: "pay alice 75k today").isEmpty)
+    check("learn: synonym is a rewrite, not a slip", Learning.pairs(original: "please send the report today", edited: "please share the report today").isEmpty)
+    check("learn: rewrite of most of the text is ignored", Learning.pairs(original: "we should go there tomorrow morning for lunch", edited: "let us visit the office next week instead").isEmpty)
+    check("learn: untouched text learns nothing", Learning.pairs(original: "nothing changed here", edited: "nothing changed here").isEmpty)
+    check("learn: added words alone learn nothing", Learning.pairs(original: "see you at the office", edited: "see you at the office tomorrow morning").isEmpty)
+    check("learn: Chinese fix takes a neighbour so it is not one lone character", Learning.pairs(original: "我们明天去开会", edited: "我们明天去开汇") == [P("开会", "开汇")])
+    check("learn: two fixes in one sentence", Learning.pairs(original: "Rank Lore sells on Shopfy every day", edited: "Ranklore sells on Shopify every day") == [P("Rank Lore", "Ranklore"), P("Shopfy", "Shopify")])
+
+    let t0s = "2026-11-08"
+    var lf = LearnedFile()
+    let common: (String) -> Bool = { $0.lowercased() == "their" }
+    lf.record([P("Ranklor", "Ranklore")], today: t0s)
+    check("learn: a made-up word swaps after one fix", lf.activeFixes(isCommon: common).map { $0.wrong } == ["Ranklor"])
+    lf.record([P("their", "there")], today: t0s)
+    check("learn: a real word needs three fixes", lf.activeFixes(isCommon: common).map { $0.wrong } == ["Ranklor"])
+    lf.record([P("their", "there")], today: t0s); lf.record([P("their", "there")], today: t0s)
+    check("learn: three fixes switch a real word on", Set(lf.activeFixes(isCommon: common).map { $0.wrong }) == ["Ranklor", "their"])
+    lf.record([P("Rank Lore", "Ranklore")], today: t0s)
+    check("learn: a phrase needs two fixes", !lf.activeFixes(isCommon: common).contains { $0.wrong == "Rank Lore" })
+    lf.record([P("Rank Lore", "Ranklore")], today: t0s)
+    check("learn: two fixes switch a phrase on", lf.activeFixes(isCommon: common).contains { $0.wrong == "Rank Lore" })
+    var tie = LearnedFile()
+    tie.record([P("Kobi", "Kobe")], today: t0s); tie.record([P("Kobi", "Cobie")], today: t0s)
+    check("learn: two equal answers for one word apply neither", tie.activeFixes(isCommon: { _ in false }).isEmpty)
+    var grow = LearnedFile()
+    grow.record([P("Kobi", "Kobi Wong")], weight: 3, today: t0s)
+    check("learn: a swap that would grow its own result is never applied", grow.activeFixes(isCommon: { _ in false }).isEmpty)
+    let round = LearnedFile.parse(lf.render())
+    check("learn: learned.txt round-trips", round.fixes.count == lf.fixes.count && round.terms.count == lf.terms.count
+        && round.terms.first(where: { $0.term == "Ranklore" })?.votes == lf.terms.first(where: { $0.term == "Ranklore" })?.votes)
+    var old = LearnedFile(); old.record([P("Ranklor", "Ranklore")], today: "2025-01-01"); old.record([P("Shopfy", "Shopify")], weight: 3, today: "2025-01-01")
+    old.prune(today: "2026-11-08")
+    check("learn: single old fixes fade, repeated ones stay", old.fixes.map { $0.wrong } == ["Shopfy"])
+
+    var lv = Vocabulary.parse("Ranklore\nMS => EMIS\n")
+    var lfv = LearnedFile()
+    lfv.record([P("MS", "Em Is"), P("Shopfy", "Shopify")], weight: 3, today: t0s)
+    lv.addLearned(lfv, isCommon: { _ in false })
+    check("learn: your own dictionary wins over a learned swap", lv.apply("MS and Shopfy") == "EMIS and Shopify")
+    check("learn: learned words join the prompt", lv.prompt.contains("Shopify") && lv.prompt.contains("Ranklore"))
+    var big = Vocabulary()
+    big.terms = (1...80).map { "word\($0)" }
+    big.learnedTerms = (1...30).map { "learned\($0)" }
+    check("learn: prompt stays at 60 words and keeps room for learned ones", big.promptTerms.count == 60 && big.promptTerms.contains("learned1") && big.promptTerms.contains("word1"))
+
+    let field = "Hi team.\nCall Rank Lore about the plan today.\nThanks"
+    let typed = "Call Rank Lore about the plan today."
+    let startAt = (field as NSString).range(of: typed).location
+    let anch = Learning.anchors(in: field, start: startAt, length: (typed as NSString).length)
+    let fixedField = "Hi team.\nCall Ranklore about the plan today.\nThanks"
+    check("learn: finds the typed text again after an edit", anch.flatMap { Learning.span($0, in: fixedField) } == "Call Ranklore about the plan today.")
+    check("learn: finds it when text was added above", anch.flatMap { Learning.span($0, in: "Subject line\n" + field) } == typed)
+    check("learn: gives up when its surroundings were rewritten", anch.flatMap { Learning.span($0, in: "completely different text") } == nil)
+
     print(fails == 0 ? "ALL PASSED" : "\(fails) FAILED")
     exit(fails == 0 ? 0 : 1)
+}
+
+// FreeFlow --probe-learn "typed text": watches the focused text box the way the app does after typing,
+// prints what it would learn from your edits, and saves nothing. For checking the learning against a real app.
+if let i = args.firstIndex(of: "--probe-learn"), i + 1 < args.count {
+    Learning.dryRun = true
+    let watcher = CorrectionWatcher()
+    var learned: [Learning.Pair] = []
+    watcher.onLearned = { learned = $0 }
+    // Optional: --probe-activate com.apple.TextEdit brings that app forward first (another app may grab focus between steps).
+    let front = args.firstIndex(of: "--probe-activate").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
+    for _ in 0..<8 where !watcher.isWatching {
+        if let id = front { NSRunningApplication.runningApplications(withBundleIdentifier: id).first?.activate(options: []) }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+        watcher.begin(pasted: args[i + 1])
+    }
+    print(watcher.isWatching ? "watching" : "NOT WATCHING: could not find that text in the focused box")
+    fflush(stdout)
+    let end = Date().addingTimeInterval(40)
+    while Date() < end, watcher.isWatching { RunLoop.main.run(until: Date().addingTimeInterval(0.5)) }
+    watcher.finish()
+    print("learned: " + (learned.isEmpty ? "nothing" : learned.map { "\($0.wrong) -> \($0.right)" }.joined(separator: " | ")))
+    exit(0)
 }
 
 // FreeFlow --status: what macOS has granted this app, and whether the speech engine is in place.

@@ -3,15 +3,43 @@ import Foundation
 /// Words that Whisper should spell your way, plus "wrong => right" swaps.
 struct Vocabulary {
     var terms: [String] = []
+    /// Words learned from your corrections. They share the prompt with `terms`, which keep most of the room.
+    var learnedTerms: [String] = []
     var replacements: [(NSRegularExpression, String)] = []
+    var seenWrong = Set<String>()
+
+    /// At most 60 words go to the engine: your dictionary first, with room kept for what was learned.
+    var promptTerms: [String] {
+        let learned = learnedTerms.filter { !terms.contains($0) }
+        let reserve = min(learned.count, max(60 - terms.count, 15))
+        return Array(terms.prefix(60 - reserve)) + Array(learned.prefix(reserve))
+    }
 
     var prompt: String {
-        terms.isEmpty ? "" : "Glossary: " + terms.prefix(60).joined(separator: ", ") + "."
+        promptTerms.isEmpty ? "" : "Glossary: " + promptTerms.joined(separator: ", ") + "."
     }
 
     /// Same terms, introduced in Simplified Chinese so Whisper stays in Simplified for mixed English and Chinese speech.
     var promptMixed: String {
-        terms.isEmpty ? "" : "词汇：" + terms.prefix(60).joined(separator: ", ") + "。"
+        promptTerms.isEmpty ? "" : "词汇：" + promptTerms.joined(separator: ", ") + "。"
+    }
+
+    /// A swap from `wrong` to `right`. The first rule for a given `wrong` wins, so your own dictionary beats what was learned.
+    mutating func addReplacement(_ wrong: String, _ right: String) {
+        guard !wrong.isEmpty, !seenWrong.contains(wrong.lowercased()) else { return }
+        seenWrong.insert(wrong.lowercased())
+        var pattern = NSRegularExpression.escapedPattern(for: wrong)
+        if wrong.first.map({ $0.isLetter || $0.isNumber }) == true { pattern = "\\b" + pattern }
+        if wrong.last.map({ $0.isLetter || $0.isNumber }) == true { pattern += "\\b" }
+        if let re = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+            replacements.append((re, NSRegularExpression.escapedTemplate(for: right)))
+        }
+    }
+
+    /// Adds what FreeFlow learned from your corrections: active swaps, and the words you meant as hotwords.
+    mutating func addLearned(_ learned: LearnedFile, isCommon: (String) -> Bool) {
+        for fix in learned.activeFixes(isCommon: isCommon) { addReplacement(fix.wrong, fix.right) }
+        learnedTerms = learned.topTerms(40)
     }
 
     static let template = """
@@ -56,21 +84,14 @@ struct Vocabulary {
 
     static func parse(_ text: String) -> Vocabulary {
         var v = Vocabulary()
-        var seenWrong = Set<String>()
         for raw in text.components(separatedBy: .newlines) {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.isEmpty || line.hasPrefix("#") { continue }
             if let arrow = line.range(of: "=>") {
                 let wrong = line[..<arrow.lowerBound].trimmingCharacters(in: .whitespaces)
                 let right = line[arrow.upperBound...].trimmingCharacters(in: .whitespaces)
-                guard !wrong.isEmpty, !seenWrong.contains(wrong.lowercased()) else { continue }
-                seenWrong.insert(wrong.lowercased())
-                var pattern = NSRegularExpression.escapedPattern(for: wrong)
-                if wrong.first.map({ $0.isLetter || $0.isNumber }) == true { pattern = "\\b" + pattern }
-                if wrong.last.map({ $0.isLetter || $0.isNumber }) == true { pattern += "\\b" }
-                if let re = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
-                    v.replacements.append((re, NSRegularExpression.escapedTemplate(for: right)))
-                }
+                guard !wrong.isEmpty, !v.seenWrong.contains(wrong.lowercased()) else { continue }
+                v.addReplacement(wrong, right)
                 if !right.isEmpty, !v.terms.contains(right) { v.terms.append(right) }
             } else if !v.terms.contains(line) {
                 v.terms.append(line)
