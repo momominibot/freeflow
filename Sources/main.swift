@@ -13,8 +13,9 @@ if let i = args.firstIndex(of: "--selftest"), i + 1 < args.count {
     let started = Date()
     let done = DispatchSemaphore(value: 0)
     var output = ""
-    server.transcribe(URL(fileURLWithPath: args[i + 1]), language: i + 2 < args.count ? args[i + 2] : "en",
-                      prompt: p.vocab.prompt) { result in
+    let testLang = i + 2 < args.count ? args[i + 2] : "en"
+    server.transcribe(URL(fileURLWithPath: args[i + 1]), language: testLang,
+                      prompt: testLang == "zh-en" ? p.vocab.promptMixed : p.vocab.prompt) { result in
         switch result {
         case .success(let raw):
             let light = TextCleaner.clean(raw, removeFillers: true, vocab: p.vocab, quiet: false)
@@ -100,6 +101,13 @@ if args.contains("--test") {
 
     check("ai guard: answer rejected", !Rewriter.looksLikeSameDictation(original: "what is the capital of france", rewritten: "Paris."))
     check("ai guard: self-correction accepted", Rewriter.looksLikeSameDictation(original: "budget fifty k actually make that seventy five k for ranklore", rewritten: "Budget seventy five k for Ranklore."))
+    let mixedIn = "嗯 我们明天要 send the invoice 给 Ranklore 然后呢 update 一下 EMIS 的 Shopify theme"
+    check("ai guard: Chinese kept, accepted", Rewriter.looksLikeSameDictation(original: mixedIn, rewritten: "我们明天要 send the invoice 给 Ranklore，然后 update 一下 EMIS 的 Shopify theme。"))
+    check("ai guard: translated to English rejected", !Rewriter.looksLikeSameDictation(original: mixedIn, rewritten: "We will send the invoice to Ranklore tomorrow and update the EMIS Shopify theme."))
+    check("ai guard: English turned into Chinese rejected", !Rewriter.looksLikeSameDictation(original: "send the ranklore invoice to alice", rewritten: "把 Ranklore 的 invoice 发给 Alice。"))
+    check("ai guard: Chinese reworded away rejected", !Rewriter.looksLikeSameDictation(original: "今天 meeting 改到四点 记得 book 会议室", rewritten: "Meeting moved to four, book the room."))
+    check("ai guard: pure Chinese cleanup accepted", Rewriter.looksLikeSameDictation(original: "嗯 明天下午三点开会 记得带电脑", rewritten: "明天下午三点开会，记得带电脑。"))
+    check("language: mixed option", Language(rawValue: "zh-en") == .mixed && Vocabulary.parse("Ranklore\nEMIS+\n").promptMixed == "词汇：Ranklore, EMIS+。")
     check("ai guard: empty rejected", !Rewriter.looksLikeSameDictation(original: "hello there team", rewritten: ""))
     check("ai guard: preamble rejected", !Rewriter.looksLikeSameDictation(original: "send the invoice on monday", rewritten: "Here is the cleaned text: send the invoice on Monday."))
     check("tidy strips quotes and fences", Rewriter.tidy("```\n\"Hello.\"\n```"), "Hello.")

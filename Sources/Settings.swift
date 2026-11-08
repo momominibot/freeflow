@@ -76,12 +76,13 @@ enum TalkKey: String, CaseIterable {
 }
 
 enum Language: String, CaseIterable {
-    case english = "en", auto = "auto", chinese = "zh", malay = "ms", indonesian = "id", tamil = "ta", hindi = "hi",
+    case english = "en", mixed = "zh-en", auto = "auto", chinese = "zh", malay = "ms", indonesian = "id", tamil = "ta", hindi = "hi",
          japanese = "ja", korean = "ko", spanish = "es", french = "fr", german = "de", vietnamese = "vi", thai = "th"
 
     var title: String {
         switch self {
         case .english: return "English"
+        case .mixed: return "English + Chinese (mixed)"
         case .auto: return "Auto-detect"
         case .chinese: return "Chinese (中文)"
         case .malay: return "Malay"

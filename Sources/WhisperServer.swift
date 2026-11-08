@@ -118,8 +118,10 @@ final class WhisperServer {
             guard let audio = try? Data(contentsOf: url) else {
                 return completion(.failure(FFError(message: "Recording missing")))
             }
+            // Mixed English and Chinese: Whisper detects per recording; the Qwen script maps "zh-en" itself.
+            let lang = (self.engine == .whisper && language == "zh-en") ? "auto" : language
             let fields = [("response_format", "json"), ("temperature", "0.0"),
-                          ("language", language), ("prompt", prompt)]
+                          ("language", lang), ("prompt", prompt)]
             self.session.dataTask(with: self.request(audio: audio, fields: fields)) { data, _, err in
                 if let err = err { return completion(.failure(err)) }
                 guard let data = data,

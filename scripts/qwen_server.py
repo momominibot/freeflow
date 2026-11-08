@@ -30,7 +30,12 @@ infer_lock = threading.Lock()  # the MLX model is not safe to call from two thre
 
 
 def language_for(code):
-    return SUPPORTED.get((code or "").strip().lower())  # None = let the model detect
+    code = (code or "").strip().lower()
+    # Mixed English + Chinese. Forcing "Chinese" keeps the English words as spoken, while auto-detect sometimes
+    # decides a mostly-Chinese sentence is English and translates the Chinese part (seen in testing).
+    if code == "zh-en":
+        return "Chinese"
+    return SUPPORTED.get(code)  # None = let the model detect
 
 
 def parse_multipart(content_type, body):

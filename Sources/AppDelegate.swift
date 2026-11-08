@@ -272,7 +272,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let p = Personalization.load()
             if let e = p.teamError { self.overlay.flash(e, seconds: 2) }
             let language = m == .command ? "en" : self.settings.language.rawValue
-            self.server.transcribe(take.url, language: language, prompt: p.vocab.prompt) { result in
+            let prompt = language == Language.mixed.rawValue ? p.vocab.promptMixed : p.vocab.prompt
+            self.server.transcribe(take.url, language: language, prompt: prompt) { result in
                 DispatchQueue.main.async {
                     switch result {
                     case .success(let raw):

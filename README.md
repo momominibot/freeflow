@@ -73,6 +73,8 @@ To test on your own voice instead of trusting benchmarks: tick **Keep my recordi
 
 It runs every kept take through both engines side by side. Add `"truth": "what you actually said"` to a take's `.json` and it scores word error for both. **Delete saved recordings** in the same menu removes them all.
 
+**Mixed English and Chinese.** Pick Language › *English + Chinese (mixed)*. Whisper then detects per recording and the Qwen engine is told "Chinese", which keeps English words as spoken (left on auto-detect it once translated the Chinese half of a sentence into English). The clean-up AI is told never to translate, and its safety check now rejects any rewrite that loses the Chinese characters or turns English into Chinese. Tested on computer-generated speech only; real Singapore speech is the next test (use "Keep my recordings").
+
 The Qwen package lists English, Chinese, Arabic, Dutch, French, German, Hindi, Italian, Japanese, Korean, Portuguese, Russian, Spanish and Turkish. For Malay, Indonesian, Tamil, Vietnamese and Thai the Qwen engine auto-detects and is untested here, so stay on Whisper for those.
 
 ## Install (teammates)

@@ -9,6 +9,11 @@ struct Vocabulary {
         terms.isEmpty ? "" : "Glossary: " + terms.prefix(60).joined(separator: ", ") + "."
     }
 
+    /// Same terms, introduced in Simplified Chinese so Whisper stays in Simplified for mixed English and Chinese speech.
+    var promptMixed: String {
+        terms.isEmpty ? "" : "词汇：" + terms.prefix(60).joined(separator: ", ") + "。"
+    }
+
     static let template = """
     # FreeFlow dictionary
     # One word or name per line, so Whisper spells it your way.

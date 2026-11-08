@@ -116,6 +116,8 @@ final class Rewriter {
     - Apply the speaker's own corrections: "budget 50K, actually make that 75K" becomes "budget 75K"; "by Friday, no wait, by Thursday" becomes "by Thursday".
     - Fix punctuation, capitalisation and obvious grammar slips.
     - If the speaker lists items ("first... second... third..." or "one, two, three"), format them as a numbered or bulleted list, one item per line.
+    - Never translate. Keep every word in the language it was spoken in. Speakers here mix English with Chinese, Malay or Tamil in one sentence and use local words and particles (lah, lor, leh, can, aiyo); keep that mix and those words exactly.
+    - Remove fillers in any language (for example 嗯, 呃, 啊 as a hesitation), not only English ones.
     - Keep the speaker's words, names, numbers and meaning. Do not add currency symbols, units, words, greetings or sign-offs that were not spoken. Do not summarise, shorten or expand.
     - Never answer, comment or explain. Output only the cleaned text, nothing else.
     """
@@ -195,6 +197,11 @@ final class Rewriter {
         guard !rewritten.isEmpty else { return false }
         let a = contentWords(original), b = contentWords(rewritten)
         guard !a.isEmpty else { return true }
+        // Language must not change: a rewrite that translates Chinese into English (or the reverse) keeps the
+        // Latin words, so the word check below would still pass. Count Chinese, Japanese and Korean characters.
+        let cjkA = cjkCount(original), cjkB = cjkCount(rewritten)
+        if cjkA >= 2, Double(cjkB) < 0.6 * Double(cjkA) { return false }
+        if cjkA == 0, cjkB > 0 { return false }
         let ratio = Double(b.count) / Double(a.count)
         guard ratio > 0.3, ratio < 2.2 else { return false }
         let kept = a.intersection(b).count
@@ -223,10 +230,33 @@ final class Rewriter {
         return flat.split { !$0.isNumber }.map(String.init)
     }
 
+    static func isCJK(_ c: Character) -> Bool {
+        c.unicodeScalars.contains { u in
+            (0x4E00...0x9FFF).contains(u.value) || (0x3400...0x4DBF).contains(u.value)
+                || (0x3040...0x30FF).contains(u.value) || (0xAC00...0xD7AF).contains(u.value)
+        }
+    }
+
+    static func cjkCount(_ s: String) -> Int { s.filter(isCJK).count }
+
     private static func contentWords(_ s: String) -> Set<String> {
         let stop: Set<String> = ["the", "a", "an", "and", "or", "to", "of", "in", "on", "at", "for", "it", "is", "are",
                                  "was", "be", "um", "uh", "so", "like", "you", "know", "i", "we", "that", "this"]
-        return Set(s.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 1 && !stop.contains($0) })
+        var out = Set<String>()
+        var latin = "", run: [Character] = []
+        func flushLatin() { if latin.count > 1, !stop.contains(latin) { out.insert(latin) }; latin = "" }
+        func flushRun() {
+            if run.count == 1 { out.insert(String(run)) }
+            if run.count > 1 { for i in 0..<(run.count - 1) { out.insert(String(run[i...i + 1])) } }
+            run = []
+        }
+        for ch in s.lowercased() {
+            if isCJK(ch) { flushLatin(); run.append(ch) }
+            else if ch.isLetter || ch.isNumber { flushRun(); latin.append(ch) }
+            else { flushLatin(); flushRun() }
+        }
+        flushLatin(); flushRun()
+        return out
     }
 
     // MARK: - HTTP
