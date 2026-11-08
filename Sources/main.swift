@@ -7,7 +7,8 @@ let args = CommandLine.arguments
 // FreeFlow --selftest file.wav [language]: transcribe a file on a spare port and print the result.
 if let i = args.firstIndex(of: "--selftest"), i + 1 < args.count {
     let server = WhisperServer(port: 8179)
-    server.start()
+    // Optional 3rd argument picks the engine: whisper (default) or qwen.
+    server.switchTo(i + 3 < args.count ? (SpeechEngine(rawValue: args[i + 3]) ?? .whisper) : .whisper)
     let p = Personalization.load()
     let started = Date()
     let done = DispatchSemaphore(value: 0)
@@ -111,6 +112,25 @@ if args.contains("--test") {
     check("style lookup built-in", p.style(for: "com.apple.mail") == .formal)
     check("style lookup unknown", p.style(for: "x.y.z") == .neutral)
     check("style lookup nil app", p.style(for: nil) == .neutral)
+
+    // Saved recordings: pairs of .wav + .json, newest kept, same-second takes do not overwrite each other.
+    let tdir = FileManager.default.temporaryDirectory.appendingPathComponent("ff-takes-\(UUID().uuidString)")
+    let fake = FileManager.default.temporaryDirectory.appendingPathComponent("ff-fake-\(UUID().uuidString).wav")
+    try? Data([1, 2, 3]).write(to: fake)
+    let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+    for k in 0..<5 {
+        TakeStore.keep(fake, engine: "qwen", heard: "heard \(k)", final: "final \(k)", mode: "light",
+                       in: tdir, limit: 3, now: t0.addingTimeInterval(Double(k)))
+    }
+    TakeStore.keep(fake, engine: "qwen", heard: "same second", final: "x", mode: "light", in: tdir, limit: 3, now: t0.addingTimeInterval(4))
+    let kept = ((try? FileManager.default.contentsOfDirectory(atPath: tdir.path)) ?? [])
+    check("takes: newest 3 kept as wav+json pairs", kept.filter { $0.hasSuffix(".wav") }.count == 3 && kept.filter { $0.hasSuffix(".json") }.count == 3)
+    let metaFile = kept.filter { $0.hasSuffix(".json") }.sorted().last ?? ""
+    let meta = (try? JSONSerialization.jsonObject(with: Data(contentsOf: tdir.appendingPathComponent(metaFile)))) as? [String: Any]
+    check("takes: sidecar holds engine and what was heard", (meta?["engine"] as? String) == "qwen" && (meta?["heard"] as? String) == "same second")
+    try? FileManager.default.removeItem(at: tdir)
+    try? FileManager.default.removeItem(at: fake)
+    check("engine setting parses", SpeechEngine(rawValue: "qwen") == .qwen && SpeechEngine(rawValue: "nonsense") == nil)
 
     print(fails == 0 ? "ALL PASSED" : "\(fails) FAILED")
     exit(fails == 0 ? 0 : 1)

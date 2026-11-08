@@ -11,6 +11,7 @@ struct Outcome {
     var app: String?
     var pressEnter = false
     var copyOnly = false    // Command Mode result with no editable field: show and copy instead of pasting
+    var engine = ""         // which speech engine heard it, for saved recordings
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -44,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastOutcome: Outcome?
     private var axTimer: Timer?
     private var aiNoted = false
+    private var installingQwen = false
 
     private static let tapThreshold: TimeInterval = 0.3
     private static let maxLength: TimeInterval = 20 * 60
@@ -73,7 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         recorder.onLevel = { [weak self] level in self?.overlay.level(level) }
         server.onStateChange = { [weak self] in self?.refreshIcon() }
-        server.start()
+        server.switchTo(settings.engine)
         if settings.cleanupLevel == .medium || settings.commandMode { ai.warm() }
         Timer.scheduledTimer(withTimeInterval: 25 * 60, repeats: true) { [weak self] _ in
             guard let self = self, self.settings.cleanupLevel == .medium || self.settings.commandMode else { return }
@@ -352,6 +354,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func done(_ id: Int, _ outcome: Outcome?, file: URL, keepOverlay: Bool = false) {
+        if settings.keepTakes, var o = outcome, !o.text.isEmpty {
+            o.engine = settings.engine.rawValue
+            TakeStore.keep(file, engine: o.engine, heard: o.raw, final: o.text, mode: o.mode)
+        }
         try? FileManager.default.removeItem(at: file)
         inFlight -= 1
         finished[id] = outcome ?? Outcome(text: "", raw: "", mode: "none", app: nil)
@@ -476,9 +482,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let error = server.lastError {
             status = "⚠︎ \(error)"
         } else if !server.isReady {
-            status = "Loading speech model…"
+            status = "Loading \(settings.engine.short)…"
         } else {
-            status = "Ready · runs offline, no word limit"
+            status = "Ready · \(settings.engine.short) · runs offline, no word limit"
         }
         menu.addItem(info(status))
         menu.addItem(info("Tap \(key.short) to start, tap again to finish · or hold to talk"))
@@ -525,6 +531,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let tapItem = item("Tap to start and stop", #selector(toggleTapMode))
         tapItem.state = settings.tapToToggle ? .on : .off
         menu.addItem(tapItem)
+
+        let engineMenu = NSMenu()
+        for e in SpeechEngine.allCases {
+            let it = item(e.title, #selector(pickEngine(_:)))
+            it.representedObject = e.rawValue
+            it.state = e == settings.engine ? .on : .off
+            engineMenu.addItem(it)
+        }
+        engineMenu.addItem(.separator())
+        if installingQwen {
+            engineMenu.addItem(info("Installing the Qwen engine… (about 5 GB, a few minutes)"))
+        } else if !WhisperServer.qwenInstalled {
+            engineMenu.addItem(info("Picking Qwen downloads it once (about 5 GB). Nothing is uploaded."))
+        }
+        let keep = item("Keep my recordings on this Mac (to compare engines)", #selector(toggleKeepTakes))
+        keep.state = settings.keepTakes ? .on : .off
+        engineMenu.addItem(keep)
+        engineMenu.addItem(item("Show saved recordings", #selector(showTakes)))
+        engineMenu.addItem(item("Delete saved recordings", #selector(deleteTakes)))
+        menu.addItem(submenu("Speech engine", engineMenu))
 
         let cmdMenu = NSMenu()
         let cmdOn = item("Command Mode on", #selector(toggleCommandMode))
@@ -666,6 +692,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleTapMode() { settings.tapToToggle.toggle() }
+
+    @objc private func pickEngine(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let e = SpeechEngine(rawValue: raw),
+              e != settings.engine || server.lastError != nil else { return }
+        if e == .qwen, !WhisperServer.qwenInstalled {
+            return installQwen()
+        }
+        settings.engine = e
+        server.switchTo(e)
+        overlay.flash("Speech engine: \(e.short)", seconds: 2)
+    }
+
+    /// Runs scripts/install-qwen-engine.sh (bundled) once: a private Python env plus the model download.
+    private func installQwen() {
+        guard !installingQwen else { return }
+        guard WhisperServer.qwenScript != nil,
+              let script = Bundle.main.url(forResource: "install-qwen-engine", withExtension: "sh") else {
+            return overlay.flash("Qwen installer missing from this build", seconds: 3)
+        }
+        installingQwen = true
+        overlay.flash("Installing the Qwen engine · about 5 GB, a few minutes", seconds: 4)
+        try? FileManager.default.createDirectory(at: Paths.logs, withIntermediateDirectories: true)
+        let logURL = Paths.logs.appendingPathComponent("qwen-install.log")
+        FileManager.default.createFile(atPath: logURL.path, contents: nil)
+        let log = try? FileHandle(forWritingTo: logURL)
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/bash")
+        p.arguments = [script.path]
+        p.standardOutput = log
+        p.standardError = log
+        p.terminationHandler = { [weak self] proc in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.installingQwen = false
+                if proc.terminationStatus == 0, WhisperServer.qwenInstalled {
+                    self.settings.engine = .qwen
+                    self.server.switchTo(.qwen)
+                    self.overlay.flash("Qwen engine installed · loading it now", seconds: 3)
+                } else {
+                    self.overlay.flash("Qwen install failed · see ~/Library/Logs/FreeFlow/qwen-install.log", seconds: 5)
+                }
+            }
+        }
+        do { try p.run() } catch {
+            installingQwen = false
+            overlay.flash("Couldn't start the Qwen installer", seconds: 3)
+        }
+    }
+
+    @objc private func toggleKeepTakes() { settings.keepTakes.toggle() }
+
+    @objc private func showTakes() {
+        try? FileManager.default.createDirectory(at: Paths.takes, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(Paths.takes)
+    }
+
+    @objc private func deleteTakes() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Delete all saved recordings?"
+        alert.informativeText = "This removes the audio and the text saved with it. It can't be undone."
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        try? FileManager.default.removeItem(at: Paths.takes)
+        overlay.flash("Saved recordings deleted", seconds: 2)
+    }
 
     @objc private func toggleCommandMode() {
         settings.commandMode.toggle()

@@ -60,6 +60,21 @@ claude mcp add --scope user freeflow -- /usr/bin/env python3 "/Applications/Free
 
 Tools: `search_history`, `recent_dictations`, `get_dictionary`, `get_snippets`, `get_usage`, `add_dictionary_word`, `add_snippet`. Standard-library Python, stdio, nothing leaves the Mac. Works with any MCP client that can run a local command.
 
+## Speech engines (Whisper or Qwen3-ASR)
+
+Menu bar › **Speech engine** switches between two engines. Both run on this Mac and nothing is uploaded.
+
+- **Whisper large-v3-turbo** (default, MIT). Fast to start, ships with the install.
+- **Qwen3-ASR 1.7B** (Apache-2.0, run with `mlx-qwen3-asr`). Lower word error on the Open ASR Leaderboard (5.76 against 7.83 for Whisper turbo, English average). Picking it the first time downloads about 5 GB and builds a private Python environment in `~/Library/Application Support/FreeFlow/engines/qwen` (script: `scripts/install-qwen-engine.sh`). Your dictionary is passed to it as context, so names are spelled your way.
+
+To test on your own voice instead of trusting benchmarks: tick **Keep my recordings on this Mac** (off by default; the newest 100 are kept in `~/Library/Application Support/FreeFlow/takes`), dictate for a few days, then run
+
+    ~/Library/Application\ Support/FreeFlow/engines/qwen/venv/bin/python scripts/compare-engines.py -o report.md
+
+It runs every kept take through both engines side by side. Add `"truth": "what you actually said"` to a take's `.json` and it scores word error for both. **Delete saved recordings** in the same menu removes them all.
+
+The Qwen package lists English, Chinese, Arabic, Dutch, French, German, Hindi, Italian, Japanese, Korean, Portuguese, Russian, Spanish and Turkish. For Malay, Indonesian, Tamil, Vietnamese and Thai the Qwen engine auto-detects and is untested here, so stay on Whisper for those.
+
 ## Install (teammates)
 
 1. Unzip `FreeFlow-<version>.zip`.

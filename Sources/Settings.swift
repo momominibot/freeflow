@@ -10,6 +10,28 @@ enum Paths {
     static let history = support.appendingPathComponent("history.txt")
     static let historyJSON = support.appendingPathComponent("history.jsonl")
     static let logs = home.appendingPathComponent("Library/Logs/FreeFlow", isDirectory: true)
+    static let takes = support.appendingPathComponent("takes", isDirectory: true)
+    static let qwenDir = support.appendingPathComponent("engines/qwen", isDirectory: true)
+    static let qwenPython = qwenDir.appendingPathComponent("venv/bin/python")
+}
+
+/// Which speech-to-text engine turns your voice into words. Both run on this Mac.
+enum SpeechEngine: String, CaseIterable {
+    case whisper, qwen
+
+    var title: String {
+        switch self {
+        case .whisper: return "Whisper large-v3-turbo (default)"
+        case .qwen: return "Qwen3-ASR 1.7B (more accurate, test it)"
+        }
+    }
+
+    var short: String {
+        switch self {
+        case .whisper: return "Whisper"
+        case .qwen: return "Qwen3-ASR"
+        }
+    }
 }
 
 enum TalkKey: String, CaseIterable {
@@ -90,6 +112,17 @@ final class Settings {
     var tapToToggle: Bool {
         get { d.object(forKey: "tapToToggle") as? Bool ?? true }
         set { d.set(newValue, forKey: "tapToToggle") }
+    }
+
+    var engine: SpeechEngine {
+        get { SpeechEngine(rawValue: d.string(forKey: "engine") ?? "") ?? .whisper }
+        set { d.set(newValue.rawValue, forKey: "engine") }
+    }
+
+    /// Opt-in: keep each recording and what was heard, on this Mac only, to compare engines.
+    var keepTakes: Bool {
+        get { d.bool(forKey: "keepTakes") }
+        set { d.set(newValue, forKey: "keepTakes") }
     }
 
     /// Command Mode key. Held alone, like the talk key, never a chord.
@@ -174,5 +207,37 @@ final class Settings {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         return f.string(from: Date())
+    }
+}
+
+
+/// Opt-in saved recordings, for comparing speech engines on your own voice. Local only.
+enum TakeStore {
+    /// Copies a finished take and what each stage produced next to it, keeping the newest `limit`.
+    static func keep(_ file: URL, engine: String, heard: String, final: String, mode: String,
+                     in dir: URL = Paths.takes, limit: Int = 100, now: Date = Date()) {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        // time, then a counter, then the engine: names sort in the order the takes were made
+        var n = 1
+        var stem = f.string(from: now) + String(format: "-%02d-", n) + engine
+        while fm.fileExists(atPath: dir.appendingPathComponent(stem + ".wav").path) {
+            n += 1
+            stem = f.string(from: now) + String(format: "-%02d-", n) + engine
+        }
+        try? fm.copyItem(at: file, to: dir.appendingPathComponent(stem + ".wav"))
+        let meta: [String: Any] = ["engine": engine, "heard": heard, "final": final, "mode": mode]
+        if let data = try? JSONSerialization.data(withJSONObject: meta, options: [.prettyPrinted]) {
+            try? data.write(to: dir.appendingPathComponent(stem + ".json"))
+        }
+        let wavs = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasSuffix(".wav") }.sorted()
+        for old in wavs.dropLast(limit) {
+            let base = (old as NSString).deletingPathExtension
+            try? fm.removeItem(at: dir.appendingPathComponent(base + ".wav"))
+            try? fm.removeItem(at: dir.appendingPathComponent(base + ".json"))
+        }
     }
 }

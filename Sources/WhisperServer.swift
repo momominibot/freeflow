@@ -5,9 +5,11 @@ struct FFError: LocalizedError {
     var errorDescription: String? { message }
 }
 
-/// Runs whisper.cpp's server as a child process so the model stays loaded on the GPU.
+/// Runs the speech engine as a child process so the model stays loaded on the GPU.
+/// Both engines (whisper.cpp and the Qwen3-ASR script) answer the same two requests.
 final class WhisperServer {
     let port: Int
+    private(set) var engine: SpeechEngine = .whisper
     var onStateChange: (() -> Void)?
 
     private let lock = NSLock()
@@ -33,12 +35,42 @@ final class WhisperServer {
             .first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
+    static var qwenScript: String? {
+        let path = (Bundle.main.resourcePath ?? "") + "/qwen_server.py"
+        return FileManager.default.fileExists(atPath: path) ? path : nil
+    }
+
+    static var qwenInstalled: Bool {
+        FileManager.default.isExecutableFile(atPath: Paths.qwenPython.path) && qwenScript != nil
+    }
+
+    /// Stops the running engine (if any) and starts the chosen one.
+    func switchTo(_ engine: SpeechEngine) {
+        stop()
+        self.engine = engine
+        restarts = 0
+        start()
+    }
+
     func start() {
-        guard let bin = Self.binaryPath else {
-            return setState(ready: false, error: "Speech engine missing (brew install whisper-cpp)")
-        }
-        guard FileManager.default.fileExists(atPath: Paths.model.path) else {
-            return setState(ready: false, error: "Speech model missing")
+        let exe: String
+        let args: [String]
+        switch engine {
+        case .whisper:
+            guard let bin = Self.binaryPath else {
+                return setState(ready: false, error: "Speech engine missing (brew install whisper-cpp)")
+            }
+            guard FileManager.default.fileExists(atPath: Paths.model.path) else {
+                return setState(ready: false, error: "Speech model missing")
+            }
+            exe = bin
+            args = ["-m", Paths.model.path, "--host", "127.0.0.1", "--port", String(port), "-nt", "-l", "en", "-t", "6"]
+        case .qwen:
+            guard Self.qwenInstalled, let script = Self.qwenScript else {
+                return setState(ready: false, error: "Qwen engine not installed (menu: Speech engine)")
+            }
+            exe = Paths.qwenPython.path
+            args = [script, "--port", String(port)]
         }
         killStale()
         try? FileManager.default.createDirectory(at: Paths.logs, withIntermediateDirectories: true)
@@ -47,13 +79,12 @@ final class WhisperServer {
         let log = try? FileHandle(forWritingTo: logURL)
 
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: bin)
-        p.arguments = ["-m", Paths.model.path, "--host", "127.0.0.1", "--port", String(port),
-                       "-nt", "-l", "en", "-t", "6"]
+        p.executableURL = URL(fileURLWithPath: exe)
+        p.arguments = args
         p.standardOutput = log
         p.standardError = log
-        p.terminationHandler = { [weak self] _ in
-            DispatchQueue.main.async { self?.didExit() }
+        p.terminationHandler = { [weak self] proc in
+            DispatchQueue.main.async { self?.didExit(proc) }
         }
         do { try p.run() } catch {
             return setState(ready: false, error: "Couldn't start speech engine")
@@ -66,8 +97,11 @@ final class WhisperServer {
 
     func stop() {
         quitting = true
-        process?.terminate()
+        let old = process
         process = nil
+        old?.terminate()
+        old?.waitUntilExit()
+        setState(ready: false, error: nil)
     }
 
     func transcribe(_ url: URL, language: String, prompt: String,
@@ -111,13 +145,29 @@ final class WhisperServer {
     private func killStale() {
         let k = Process()
         k.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-        k.arguments = ["-f", "whisper-server.*--port \(port)"]
+        k.arguments = ["-f", "(whisper-server|qwen_server.py).*--port \(port)"]
         try? k.run()
         k.waitUntilExit()
+        // A dying engine can still hold the port for a moment; starting on top of it fails silently.
+        for _ in 0..<30 where portInUse() { Thread.sleep(forTimeInterval: 0.1) }
+    }
+
+    private func portInUse() -> Bool {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = in_port_t(port).bigEndian
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let r = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        return r == 0
     }
 
     private func waitForReady(_ p: Process) {
-        for _ in 0..<240 {
+        for _ in 0..<(engine == .qwen ? 720 : 240) {
             guard p.isRunning else { return }
             if ping() {
                 warmUp()
@@ -129,7 +179,9 @@ final class WhisperServer {
         setState(ready: false, error: "Speech engine didn't start (see ~/Library/Logs/FreeFlow)")
     }
 
-    private func didExit() {
+    private func didExit(_ proc: Process) {
+        // An engine we stopped on purpose (a switch) is not a crash.
+        guard proc === process else { return }
         setState(ready: false, error: lastError)
         guard !quitting else { return }
         restarts += 1

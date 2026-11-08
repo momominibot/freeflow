@@ -17,6 +17,8 @@ swiftc -O -swift-version 5 -target arm64-apple-macos13.0 Sources/*.swift \
 cp Info.plist "$APP/Contents/"
 cp scripts/freeflow-mcp.py "$APP/Contents/Resources/"
 chmod +x "$APP/Contents/Resources/freeflow-mcp.py"
+cp scripts/qwen_server.py scripts/install-qwen-engine.sh "$APP/Contents/Resources/"
+chmod +x "$APP/Contents/Resources/install-qwen-engine.sh"
 
 swiftc -O scripts/make_icon.swift -o build/make_icon
 build/make_icon build/AppIcon.iconset
