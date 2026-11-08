@@ -145,6 +145,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         guard isRecording, !handsFree else { return }
         if Date().timeIntervalSince(recordStart) < Self.tapThreshold {
+            if settings.tapToToggle, mode == .dictate {
+                // Quick tap: keep listening until the key is tapped again.
+                handsFree = true
+                overlay.showRecording(hint: "Listening · tap \(activeKey.short) again to finish")
+                play("Tink")
+                return
+            }
             cancelRecording()
             return
         }
@@ -436,7 +443,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             timer.invalidate()
             self.installHotkeys()
             self.refreshIcon()
-            self.overlay.flash("FreeFlow is ready · hold \(self.settings.talkKey.short) and talk", seconds: 3)
+            self.overlay.flash("FreeFlow is ready · tap \(self.settings.talkKey.short), talk, tap again", seconds: 3)
         }
     }
 
@@ -474,7 +481,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             status = "Ready · runs offline, no word limit"
         }
         menu.addItem(info(status))
-        menu.addItem(info("Hold \(key.short) to talk · tap ⇧ while holding for hands-free"))
+        menu.addItem(info("Tap \(key.short) to start, tap again to finish · or hold to talk"))
         if settings.commandMode {
             menu.addItem(info("Hold \(settings.commandKey.short) and say what to do with selected text"))
         }
@@ -515,6 +522,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             keyMenu.addItem(info("Tip: Keyboard settings › Press 🌐 key to › Do Nothing"))
         }
         menu.addItem(submenu("Talk key", keyMenu))
+        let tapItem = item("Tap to start and stop", #selector(toggleTapMode))
+        tapItem.state = settings.tapToToggle ? .on : .off
+        menu.addItem(tapItem)
 
         let cmdMenu = NSMenu()
         let cmdOn = item("Command Mode on", #selector(toggleCommandMode))
@@ -654,6 +664,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settings.commandKey = k
         installHotkeys()
     }
+
+    @objc private func toggleTapMode() { settings.tapToToggle.toggle() }
 
     @objc private func toggleCommandMode() {
         settings.commandMode.toggle()

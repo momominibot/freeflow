@@ -86,6 +86,12 @@ final class Settings {
         set { d.set(newValue.rawValue, forKey: "talkKey") }
     }
 
+    /// Quick tap starts hands-free dictation, next tap ends it. Holding still works as push-to-talk.
+    var tapToToggle: Bool {
+        get { d.object(forKey: "tapToToggle") as? Bool ?? true }
+        set { d.set(newValue, forKey: "tapToToggle") }
+    }
+
     /// Command Mode key. Held alone, like the talk key, never a chord.
     var commandKey: TalkKey {
         get { TalkKey(rawValue: d.string(forKey: "commandKey") ?? "") ?? .rightControl }
