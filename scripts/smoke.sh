@@ -107,7 +107,7 @@ stage_scripts() {
   for f in scripts/*.py scripts/art/*.py scripts/tools/*.py; do check "python syntax: $f" "$PY" -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$f"; done
   if tmo 60 python3 scripts/freeflow-mcp.py --selfcheck >"$WORK/mcp.log" 2>&1; then ok "MCP server selfcheck"; else bad "MCP server selfcheck"; tail -5 "$WORK/mcp.log"; fi
   grep -q workday_summary "$WORK/mcp.log" && ok "the MCP server offers the workday summary" || bad "workday_summary is not in the MCP tool list"
-  check "fleet-bridge (the Hermes hand-over) is installed and executable" test -x "$HOME/.local/bin/fleet-bridge"
+  if [ -x "$HOME/.local/bin/hermes" ] || [ -x "$HOME/.local/bin/fleet-bridge" ]; then ok "a Hermes hand-over (hermes or fleet-bridge) is installed and executable"; else bad "neither hermes nor fleet-bridge is installed"; fi
   check "compare-engines.py runs --help" tmo 20 python3 scripts/compare-engines.py --help
 }
 
@@ -284,7 +284,7 @@ restore_data() {
   for x in $(ls "$SUP/meetings" 2>/dev/null); do grep -qxF -- "$x" "$WORK/data/meetings.list" || rm -rf "$SUP/meetings/$x"; done
   [ -f "$WORK/data/prefs.plist" ] && defaults import $DOM "$WORK/data/prefs.plist" >/dev/null 2>&1
   # import adds and changes keys but never removes one, so take out every key the run introduced
-  for k in debugTriggers workdayInterval workdayOn meetingMode meetingCountdown learnFromTyping typingSeen fixesByDay screenTextOn typingDetailOn keepPictures detailInterval doubleTapToStart unsentPopup showInDock; do
+  for k in debugTriggers workdayInterval workdayOn meetingMode meetingCountdown learnFromTyping typingSeen fixesByDay screenTextOn typingDetailOn keepPictures detailInterval doubleTapToStart unsentPopup showInDock learnTypingAtOnce takesLimit takesDays takesFolder keepTakes; do
     plutil -extract "$k" raw -o - "$WORK/data/prefs.plist" >/dev/null 2>&1 || defaults delete $DOM "$k" >/dev/null 2>&1
   done
   open "$APP"
@@ -333,6 +333,12 @@ live_ui() {
   press Account;     see "Account tab" "First name"
   press Team;        see "Team tab" "Shared folder"
   press "Data and Privacy"; see "Data and Privacy tab" "Keep my recordings on this Mac"
+  # with recordings switched on, how many, how long and where can be chosen (and the switch goes back off)
+  defaults write $DOM keepTakes -bool true; press Calls; press "Data and Privacy"
+  see "recordings: how many to keep can be chosen" "How many to keep"
+  see "recordings: how long to keep them can be chosen" "How long to keep them"
+  see "recordings: the folder can be chosen" "Choose folder"
+  defaults write $DOM keepTakes -bool false
   press Close;       gone "Settings closes" "Talk key"
   press "Share with team"; see "Share with team opens Team" "Shared folder"; press Close
   press "Connect your AI tools"; see "Connect your AI tools opens the MCP tab" "Copy command"; press Close
@@ -462,9 +468,9 @@ live_typing() {
   stage "Learning from my own typing (opt-in): a name backspaced and written again"
   local lf="$SUP/learned.txt" off
   if ! te_front; then post typing:off; skp "TextEdit could not be brought to the front, so no keystrokes were sent (they would have gone to another app)"; return; fi
-  post typing:on; sleep 1.5; off=$(loglen)
+  post typing:once:off; post typing:on; sleep 1.5; off=$(loglen)
   te_new
-  # the same name fixed twice: typed, left to settle, backspaced, written again (a name no other stage uses, so they cannot affect each other)
+  # with "keep a clear fix the first time" off, the same name must be fixed twice: typed, left to settle, backspaced, written again (a name no other stage uses, so they cannot affect each other)
   tp "FFTYPE we love Quillmor so much."; sleep 2.5; bk 17; sleep 0.3; tp "Quillmore so much."; sleep 2.5
   grep -q "Quillmore" "$lf" 2>/dev/null && bad "one fix was already learned" || ok "one fix teaches nothing yet"
   nl; tp "FFTYPE again Quillmor today."; sleep 2.5; bk 15; sleep 0.3; tp "Quillmore today."; sleep 3
@@ -476,6 +482,16 @@ live_typing() {
   grep -qi "| teh |" "$lf" 2>/dev/null && bad "an ordinary typo was learned" || ok "a typo fixed into an everyday word is ignored"
   # privacy: no text is kept, only the word
   { grep -rq "FFTYPE" "$lf" 2>/dev/null || defaults read $DOM 2>/dev/null | grep -q "FFTYPE"; } && bad "typed text was stored" || ok "no typed text is stored anywhere, only the spelling"
+  # with "keep a clear fix the first time" on, one clear spelling fix is kept, but only after it has stood for 20 seconds
+  post typing:once:on; sleep 0.5; off=$(loglen)
+  nl; tp "FFTYPE we love Brandlewik so much."; sleep 2.5; bk 19; sleep 0.3; tp "Brandlewick so much."; sleep 4
+  grep -q "Brandlewick" "$lf" 2>/dev/null && bad "a clear fix was kept at once, without waiting" || ok "a clear fix waits a little before it is kept"
+  if wait_for 45 logsaw "$off" "typing: learned Brandlewik -> Brandlewick"; then ok "one clear spelling fix is kept the first time (Brandlewik to Brandlewick)"; else bad "the clear fix was not kept"; logsince "$off" | grep typing | tail -3; fi
+  grep -q "Brandlewick" "$lf" 2>/dev/null && ok "the first-time fix is in learned.txt" || bad "learned.txt does not hold the first-time fix"
+  # a half-deleted word is not a fix, even with that on
+  off=$(loglen)
+  nl; tp "FFTYPE open the Zephyrcom"; sleep 2.5; bk 9; sleep 0.3; tp "Zeph"; sleep 4
+  logsaw "$off" "typing: learned" && bad "a half-deleted word was learned" || ok "a half-deleted word is not learned"
   # switched off, it learns nothing
   post typing:off; sleep 1
   nl; tp "FFTYPE we use Zorbitron today."; sleep 2.5; bk 16; sleep 0.3; tp "Zorbitrone today."; sleep 2.5
@@ -641,7 +657,16 @@ live_workday() {
   see "Workday page offers noting how I type" "Note how I type"
   see "Workday page offers small pictures as a separate switch" "Keep small pictures of the window too"
   see "Workday page can forget the deeper notes" "Forget the deeper notes"
-  [ -x "$HOME/.local/bin/fleet-bridge" ] && see "Workday page can ask Hermes for a closer look" "Ask Hermes for a closer look"
+  if [ -x "$HOME/.local/bin/hermes" ] || [ -x "$HOME/.local/bin/fleet-bridge" ]; then
+    see "Workday page can ask Hermes for a closer look" "Ask Hermes for a closer look"
+    see "Workday page can test the Hermes connection" "Test the connection"
+  fi
+  if [ -x "$HOME/.local/bin/hermes" ]; then
+    # makes a card nobody is assigned to, then closes it: nothing runs, nothing is spent
+    local hoff; hoff=$(loglen); post hermes:check
+    if wait_for 90 logsaw "$hoff" "hermes: connection works"; then ok "the Hermes connection works (a test card was made and closed)"
+    else bad "the Hermes connection did not work"; logsince "$hoff" | grep -i hermes | tail -2; fi
+  fi
 
   # recording, with a window whose title holds an email address, to prove it is cleaned before it is stored
   local f="/private/tmp/ff-smoke-jamie@example.com.txt" today; today=$(date +%F)

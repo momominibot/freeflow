@@ -6,7 +6,7 @@ import Foundation
 //
 // FreeFlow already learns when you fix a word in text it typed. This adds, once you switch it on, the fixes you make in your
 // own typing: you type a name wrongly, backspace and write it again. It does not record keystrokes. It looks at the line you are
-// on every half second, and only when a word on that line was replaced by an unusual word (a name, a product, jargon) twice does it
+// on every half second, and only when a word on that line was replaced by an unusual word (a name, a product, jargon), and it is a clear spelling fix or has been seen twice, does it
 // remember the spelling, which is then given to the speech engine as a hint. No text is kept, only that word. Password fields,
 // password managers, terminals and FreeFlow itself are never looked at.
 
@@ -41,9 +41,20 @@ enum TypingRules {
                 && !(isCommon(p.right) && isCommon(p.right.lowercased()))     // a name the Mac knows only with its capital is still a name
         }
     }
+
+    /// Clear enough to keep the first time: close in spelling to what it replaced, and not a word being deleted or typed.
+    /// Spaces and capitals do not count, so "live loom" becoming "LifeLoom" is one letter away.
+    static func confident(_ p: Learning.Pair) -> Bool {
+        let w = Array(p.wrong.lowercased().filter { !$0.isWhitespace })
+        let r = Array(p.right.lowercased().filter { !$0.isWhitespace })
+        guard w.count >= 3, r.count >= 4, p.wrong != p.right else { return false }
+        if w.count > r.count && w.starts(with: r) { return false }            // "store da" cut down to "stor": a word being deleted
+        if r.starts(with: w) && r.count - w.count > 2 { return false }        // a word still being typed
+        return Learning.distance(w, r) <= max(2, r.count / 4)
+    }
 }
 
-/// A spelling is only remembered after you have fixed it the same way twice, so one slip of the keyboard teaches nothing.
+/// A spelling that is not clearly a fix is only remembered after you have fixed it the same way twice, so one slip teaches nothing.
 struct TypingSeen {
     var counts: [String: Int] = [:]
     static let keep = 200
@@ -106,6 +117,9 @@ final class TypingLearner {
     private var element: AXUIElement?
     private var tracker = TypingTracker()
     private var seen = TypingSeen(counts: Settings.counts(Settings.shared.typingSeenRaw))
+    /// Clear fixes waiting to stand for a while before they are kept, so a word you then change again is not kept.
+    private var waiting: [(pair: Learning.Pair, since: Date)] = []
+    static let keepAfter: TimeInterval = 20
 
     var running: Bool { timer != nil }
 
@@ -115,6 +129,7 @@ final class TypingLearner {
         RunLoop.main.add(t, forMode: .common)
         timer = t
         log("typing: learning from my typing is on")
+        keepEarlierFixes()
     }
 
     func stop() {
@@ -134,7 +149,41 @@ final class TypingLearner {
         return "typing: probe: \(bundle), line of \(line.text.count) characters, running \(running), seen \(seen.counts.count)"
     }
 
+    private func keep(_ pairs: [Learning.Pair]) {
+        let learned = Learning.learn(pairs)
+        if !learned.isEmpty {
+            log("typing: learned \(learned.map { "\($0.wrong) -> \($0.right)" }.joined(separator: ", "))")
+            onLearned?(learned)
+        }
+    }
+
+    /// Keeps the clear fixes that have stood for `keepAfter` seconds.
+    private func keepSettled(now: Date = Date()) {
+        let due = waiting.filter { now.timeIntervalSince($0.since) >= Self.keepAfter }.map { $0.pair }
+        guard !due.isEmpty else { return }
+        waiting.removeAll { w in due.contains(w.pair) }
+        keep(due)
+    }
+
+    /// Fixes that were seen once before "keep the first time" was on and pass the same check are kept now. A fix that was only a
+    /// stage of a longer one (its right-hand side was later changed again) is not.
+    func keepEarlierFixes() {
+        guard Settings.shared.learnTypingAtOnce else { return }
+        var pairs: [(key: String, pair: Learning.Pair)] = []
+        for key in seen.counts.keys {
+            let parts = key.components(separatedBy: " > ")
+            if parts.count == 2 { pairs.append((key, Learning.Pair(wrong: parts[0], right: parts[1]))) }
+        }
+        let wrongs = Set(pairs.map { $0.pair.wrong.lowercased() })
+        let ready = pairs.filter { TypingRules.confident($0.pair) && !wrongs.contains($0.pair.right.lowercased()) }
+        guard !ready.isEmpty else { return }
+        for r in ready { seen.counts[r.key] = nil }
+        Settings.shared.typingSeenRaw = seen.counts
+        keep(ready.map { $0.pair })
+    }
+
     private func tick() {
+        keepSettled()
         guard let app = NSWorkspace.shared.frontmostApplication, let bundle = app.bundleIdentifier, !TypingRules.skips(bundle: bundle),
               let snap = Inserter.caretSnapshot(), snap.value.utf16.count <= 60_000 else {
             element = nil; tracker.reset(); return
@@ -144,15 +193,26 @@ final class TypingLearner {
         element = snap.element
         let found = tracker.observe(text: line.text, start: line.start, sameField: same, at: Date(), isCommon: Learning.isEnglishWord)
         guard !found.isEmpty else { return }
-        let ready = seen.see(found)
+        // A clear spelling fix is kept the first time, once it has stood for a while; anything less clear needs a second sighting.
+        var others = found
+        if Settings.shared.learnTypingAtOnce {
+            let sure = found.filter(TypingRules.confident)
+            others = found.filter { !TypingRules.confident($0) }
+            let now = Date()
+            for p in sure {
+                // a stage of a longer fix ("witsu" to "witzu" before "witzu" to "witzu.vercel.app") is not a spelling to keep
+                if sure.contains(where: { $0.wrong.lowercased() == p.right.lowercased() }) { continue }
+                waiting.removeAll { $0.pair.right.lowercased() == p.wrong.lowercased() }
+                if !waiting.contains(where: { $0.pair == p }) { waiting.append((p, now)) }
+            }
+            if !sure.isEmpty { log("typing: a clear fix seen, kept in \(Int(Self.keepAfter)) seconds unless you change it again") }
+        }
+        guard !others.isEmpty else { return }
+        let ready = seen.see(others)
         if ready.isEmpty { log("typing: a possible fix seen once, waiting to see it again before keeping it") }
         Settings.shared.typingSeenRaw = seen.counts
         guard !ready.isEmpty else { return }
-        let learned = Learning.learn(ready)
-        if !learned.isEmpty {
-            log("typing: learned \(learned.map { "\($0.wrong) -> \($0.right)" }.joined(separator: ", "))")
-            onLearned?(learned)
-        }
+        keep(ready)
     }
 }
 

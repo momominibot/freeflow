@@ -137,6 +137,25 @@ if args.contains("--test") {
     let meta = (try? JSONSerialization.jsonObject(with: Data(contentsOf: tdir.appendingPathComponent(metaFile)))) as? [String: Any]
     check("takes: sidecar holds engine and what was heard", (meta?["engine"] as? String) == "qwen" && (meta?["heard"] as? String) == "same second")
     try? FileManager.default.removeItem(at: tdir)
+    // choices: a custom folder holding other files, an age limit, and delete-all that never touches what FreeFlow did not write
+    let cdir = FileManager.default.temporaryDirectory.appendingPathComponent("ff-takes-custom-\(UUID().uuidString)")
+    try? FileManager.default.createDirectory(at: cdir, withIntermediateDirectories: true)
+    try? Data([9]).write(to: cdir.appendingPathComponent("my-own-memo.wav"))
+    try? Data([9]).write(to: cdir.appendingPathComponent("notes.json"))
+    let day: Double = 86_400
+    TakeStore.keep(fake, engine: "qwen", heard: "old", final: "old", mode: "light", in: cdir, limit: 50, now: t0.addingTimeInterval(-10 * day))
+    TakeStore.keep(fake, engine: "qwen", heard: "recent", final: "recent", mode: "light", in: cdir, limit: 50, maxAgeDays: 7, now: t0)
+    let agedLeft = ((try? FileManager.default.contentsOfDirectory(atPath: cdir.path)) ?? []).filter { TakeStore.isTakeFile($0) && $0.hasSuffix(".wav") }
+    check("takes: nothing older than the chosen days is kept", agedLeft.count == 1)
+    TakeStore.keep(fake, engine: "qwen", heard: "x", final: "x", mode: "light", in: cdir, limit: 1, now: t0.addingTimeInterval(60))
+    let ownLeft = ((try? FileManager.default.contentsOfDirectory(atPath: cdir.path)) ?? []).filter { !TakeStore.isTakeFile($0) }.sorted()
+    check("takes: a folder you chose keeps your own files, even past the count", ownLeft == ["my-own-memo.wav", "notes.json"])
+    let removed = TakeStore.deleteAll(in: cdir)
+    let afterDelete = ((try? FileManager.default.contentsOfDirectory(atPath: cdir.path)) ?? []).sorted()
+    check("takes: delete removes FreeFlow's recordings only and leaves the folder and your files", removed == 1 && afterDelete == ["my-own-memo.wav", "notes.json"])
+    check("takes: only FreeFlow's own file names count", TakeStore.isTakeFile("20261109-185331-01-whisper.wav") && TakeStore.isTakeFile("20261109-185331-01-qwen.json")
+          && !TakeStore.isTakeFile("meeting.wav") && !TakeStore.isTakeFile("20261109-185331-01-qwen.mp3") && !TakeStore.isTakeFile("../20261109-185331-01-q.wav"))
+    try? FileManager.default.removeItem(at: cdir)
     try? FileManager.default.removeItem(at: fake)
     check("engine setting parses", SpeechEngine(rawValue: "qwen") == .qwen && SpeechEngine(rawValue: "nonsense") == nil)
 
@@ -490,6 +509,18 @@ if args.contains("--test") {
         let r = Hermes.send("T", "B")
         Hermes.send = realSend
         check("hermes: the hand-over goes through one replaceable sender", sent.count == 1 && sent[0].0 == "T" && { if case .success("card ok") = r { return true }; return false }())
+        check("hermes: the card command takes the brief on standard input and assigns Eren",
+              Hermes.cardArguments(title: "T", assignee: "eren") == ["kanban", "create", "T", "--body-file", "-", "--created-by", "freeflow", "--json", "--assignee", "eren"]
+              && !Hermes.cardArguments(title: "T", assignee: nil).contains("--assignee")
+              && !Hermes.cardArguments(title: "T", assignee: "eren").contains("a long brief"))
+        check("hermes: the card id is read from the JSON, with or without a line before it",
+              Hermes.cardID(from: "{\n  \"id\": \"t_abc123\",\n  \"status\": \"ready\"\n}") == "t_abc123"
+              && Hermes.cardID(from: "Bitwarden Secrets Manager: applied 2 secrets\n{\"id\": \"t_x9\"}") == "t_x9"
+              && Hermes.cardID(from: "nothing here") == nil && Hermes.cardID(from: "{\"status\": \"ready\"}") == nil)
+        check("hermes: briefs go to Levi unless you pick Eren, and a made-up agent falls back to Levi",
+              Hermes.agentName("levi") == "Levi" && Settings.hermesAgents.map { $0.id } == ["levi", "eren"]
+              && Hermes.bridgeArguments(title: "T", body: "B", agent: "levi")[1] == "levi")
+        check("hermes: the older route sends a number as the priority (the word normal broke every send)", Int(Hermes.bridgeArguments(title: "T", body: "B", agent: "levi").last ?? "") != nil)
     }
 
     // Learning from your own typing: what counts, what never does, and how the learning is measured.
@@ -514,6 +545,20 @@ if args.contains("--test") {
         check("typing: numbers and Chinese are never learned this way", TypingRules.pairs(previous: "the model X is here", current: "the model 3000 is here", isCommon: common).isEmpty && TypingRules.pairs(previous: "我喜欢排行", current: "我喜欢排名", isCommon: common).isEmpty)
         check("typing: password managers, terminals and FreeFlow itself are never looked at", TypingRules.skips(bundle: "com.1password.1password") && TypingRules.skips(bundle: "com.apple.Terminal") && TypingRules.skips(bundle: "com.googlecode.iterm2") && TypingRules.skips(bundle: "com.momominibot.freeflow") && !TypingRules.skips(bundle: "com.apple.TextEdit"))
 
+        // "keep a clear fix the first time": the fixes from a real day of typing, and the junk that came with them
+        let P = { (a: String, b: String) in Learning.Pair(wrong: a, right: b) }
+        check("typing: clear spelling fixes are kept the first time",
+              TypingRules.confident(P("emis.asio", "Emis.asia")) && TypingRules.confident(P("michiomimi.io", "michiyomimi.io"))
+              && TypingRules.confident(P("live loom", "LifeLoom")) && TypingRules.confident(P("singaporean seller", "SingaporeanSeller"))
+              && TypingRules.confident(P("witsu.versil.app", "witzu.vercel.app")) && TypingRules.confident(P("Ranklor", "Ranklore")))
+        check("typing: a word being deleted, a rewrite or a tiny word is not a clear fix",
+              !TypingRules.confident(P("store da", "stor")) && !TypingRules.confident(P("store data", "stor"))
+              && !TypingRules.confident(P("Rank", "Ranklore")) && !TypingRules.confident(P("completely", "Ranklore")) && !TypingRules.confident(P("teh", "the"))
+              && !TypingRules.confident(P("same", "same")))
+        check("unsent: a text box in a web page or an Electron app is trusted, not checked",
+              Inserter.classify(role: "AXTextArea", settable: true, web: true) == .unknown
+              && Inserter.classify(role: "AXButton", settable: false, web: true) == .unknown
+              && Inserter.classify(role: "AXTextArea", settable: true) == .editable)
         var seen = TypingSeen()
         let p1 = Learning.Pair(wrong: "Ranklor", right: "Ranklore"), p2 = Learning.Pair(wrong: "Zorbitron", right: "Zorbitrone")
         check("typing: one fix teaches nothing", seen.see([p1]).isEmpty)

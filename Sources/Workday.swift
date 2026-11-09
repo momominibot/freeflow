@@ -547,20 +547,117 @@ enum Suggestions {
 }
 
 enum Hermes {
+    static var hermesPath: String { NSHomeDirectory() + "/.local/bin/hermes" }
     static var bridgePath: String { NSHomeDirectory() + "/.local/bin/fleet-bridge" }
-    static var available: Bool { FileManager.default.isExecutableFile(atPath: bridgePath) }
+    private static func isExecutable(_ path: String) -> Bool { FileManager.default.isExecutableFile(atPath: path) }
+    static var available: Bool { isExecutable(hermesPath) || isExecutable(bridgePath) }
+
+    // MARK: pure pieces (so they can be checked without Hermes)
+
+    /// The words of the command that makes a card. The brief itself goes in on standard input, never on the command line.
+    static func cardArguments(title: String, assignee: String?) -> [String] {
+        var a = ["kanban", "create", title, "--body-file", "-", "--created-by", "freeflow", "--json"]
+        if let who = assignee { a += ["--assignee", who] }
+        return a
+    }
+
+    /// The card's id from what `hermes kanban create --json` printed (it can print a line of its own before the JSON).
+    static func cardID(from output: String) -> String? {
+        guard let start = output.firstIndex(of: "{"),
+              let data = String(output[start...]).data(using: .utf8),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let id = obj["id"] as? String, !id.isEmpty else { return nil }
+        return id
+    }
+
+    /// The older route, when only fleet-bridge is installed. Its last word is a priority and must be a number.
+    static func bridgeArguments(title: String, body: String, agent: String) -> [String] { ["send", agent, title, body, "0"] }
+
+    /// The agent that gets the briefs (a setting), and its name for a sentence.
+    static var agent: () -> String = { Settings.shared.hermesAgent }
+    static func agentName(_ id: String) -> String { id.prefix(1).uppercased() + id.dropFirst() }
+    static func hasAgent(_ id: String) -> Bool { FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.hermes/profiles/\(id)") }
+
+    // MARK: running it
+
+    /// Runs a command with a time limit. The app is started from the Dock with almost no PATH, so the usual places are added.
+    private static func run(_ path: String, _ args: [String], input: String? = nil, timeout: TimeInterval = 60) -> (status: Int32, out: String, err: String) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: path)
+        p.arguments = args
+        var env = ProcessInfo.processInfo.environment
+        let extra = ["/opt/homebrew/bin", "/usr/local/bin", NSHomeDirectory() + "/.local/bin", "/usr/bin", "/bin"]
+        env["PATH"] = (extra + (env["PATH"] ?? "").split(separator: ":").map(String.init)).joined(separator: ":")
+        p.environment = env
+        let outP = Pipe(), errP = Pipe()
+        p.standardOutput = outP; p.standardError = errP
+        let inP = Pipe()
+        p.standardInput = input == nil ? FileHandle.nullDevice : inP
+        do { try p.run() } catch { return (127, "", error.localizedDescription) }
+        if let text = input {
+            inP.fileHandleForWriting.write(Data(text.utf8))
+            try? inP.fileHandleForWriting.close()
+        }
+        let killer = DispatchWorkItem { if p.isRunning { p.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
+        let out = outP.fileHandleForReading.readDataToEndOfFile()
+        let err = errP.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        killer.cancel()
+        let text = { (d: Data) in (String(data: d, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        return (p.terminationStatus, text(out), text(err))
+    }
+
+    /// Makes one card on the Hermes board; the id on success. `assignee` nil leaves it for nobody to pick up (the connection test).
+    private static func makeCard(_ title: String, _ body: String, assignee: String?) -> Result<String, FFError> {
+        let r = run(hermesPath, cardArguments(title: title, assignee: assignee), input: body, timeout: 60)
+        if r.status == 0, let id = cardID(from: r.out) { return .success(id) }
+        let why = [r.err, r.out].filter { !$0.isEmpty }.joined(separator: " ")
+        return .failure(FFError(message: r.status == 0 ? "Hermes answered, but not with a card id. \(String(why.prefix(200)))" : "Hermes said: \(String(why.prefix(300)))"))
+    }
 
     /// Hands a brief to the Hermes fleet as a card for its orchestrator. Runs only when you press the button.
     static var send: (String, String) -> Result<String, FFError> = { title, body in
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: bridgePath)
-        p.arguments = ["send", "eren", title, body, "normal"]
-        let pipe = Pipe()
-        p.standardOutput = pipe; p.standardError = pipe
-        do { try p.run() } catch { return .failure(FFError(message: error.localizedDescription)) }
-        p.waitUntilExit()
-        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        return p.terminationStatus == 0 ? .success(out.trimmingCharacters(in: .whitespacesAndNewlines)) : .failure(FFError(message: out.trimmingCharacters(in: .whitespacesAndNewlines)))
+        let who = agent()
+        if !hasAgent(who) { return .failure(FFError(message: "Hermes has no agent called \(agentName(who)). Pick another one under Send to.")) }
+        if isExecutable(hermesPath) {
+            switch makeCard(title, body, assignee: who) {
+            case .success(let id): return .success("\(agentName(who)) has it as card \(id).")
+            case .failure(let e): return .failure(e)
+            }
+        }
+        let r = run(bridgePath, bridgeArguments(title: title, body: body, agent: who), timeout: 30)
+        let text = [r.out, r.err].filter { !$0.isEmpty }.joined(separator: " ")
+        return r.status == 0 ? .success(text) : .failure(FFError(message: String(text.prefix(300))))
+    }
+
+    /// The same, off the main thread (starting Hermes takes a few seconds), answering on the main thread.
+    static func sendAsync(_ title: String, _ body: String, done: @escaping (Result<String, FFError>) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let r = send(title, body)
+            DispatchQueue.main.async { done(r) }
+        }
+    }
+
+    /// Is the hand-over working? Makes a card nobody is assigned to, then closes it. Nothing runs and nothing is spent.
+    static func check(done: @escaping (Result<String, FFError>) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            var result: Result<String, FFError>
+            if !isExecutable(hermesPath) {
+                result = .failure(FFError(message: "Hermes is not installed at \(hermesPath)."))
+            } else if !hasAgent(agent()) {
+                result = .failure(FFError(message: "Hermes has no agent called \(agentName(agent())). Pick another one under Send to."))
+            } else {
+                switch makeCard("FreeFlow connection check (ignore)", "Sent by FreeFlow's connection test. Closed right away; nothing to do.", assignee: nil) {
+                case .failure(let e): result = .failure(e)
+                case .success(let id):
+                    let c = run(hermesPath, ["kanban", "complete", id, "--result", "FreeFlow connection check; closed by the test, nothing to do"], timeout: 60)
+                    result = c.status == 0 ? .success("Hermes answered and took a card (\(id)), and \(agentName(agent())) is there to get your briefs. The test card is closed.")
+                                           : .failure(FFError(message: "Hermes took the card (\(id)) but would not close it: \(String((c.err + c.out).prefix(200)))"))
+                }
+            }
+            DispatchQueue.main.async { done(result) }
+        }
     }
 
     static func saveBrief(_ s: Suggestion) {

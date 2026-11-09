@@ -20,7 +20,17 @@ extension Inserter {
                                             "AXToolbar", "AXMenuBar", "AXMenuBarItem", "AXMenuItem", "AXMenu", "AXPopUpButton", "AXCheckBox",
                                             "AXRadioButton", "AXSlider", "AXTabGroup", "AXScrollBar", "AXScrollArea", "AXBrowser", "AXDockItem"]
 
-    static func classify(role: String, settable: Bool) -> Landing {
+    /// A text box inside a web page or an Electron app (Chrome, Safari, Claude, Slack, VS Code) answers the Accessibility
+    /// questions a web page answers. Its value does not follow what is typed (Claude's reads as one character whatever is in it),
+    /// so arrival cannot be checked there and the paste is trusted, as for any app that does not describe its text boxes.
+    static func isWebContent(_ el: AXUIElement) -> Bool {
+        var a: CFTypeRef?, b: CFTypeRef?
+        return AXUIElementCopyAttributeValue(el, "AXDOMIdentifier" as CFString, &a) == .success
+            || AXUIElementCopyAttributeValue(el, "AXDOMClassList" as CFString, &b) == .success
+    }
+
+    static func classify(role: String, settable: Bool, web: Bool = false) -> Landing {
+        if web { return .unknown }
         if textRoles.contains(role) || settable { return .editable }
         if nonTextRoles.contains(role) { return .notText(role) }
         return .unknown
@@ -37,7 +47,7 @@ extension Inserter {
         guard let el = focusedElement() else { return (.unknown, nil, nil) }
         var roleRef: CFTypeRef?
         AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &roleRef)
-        let landing = classify(role: roleRef as? String ?? "", settable: isSettable(el))
+        let landing = classify(role: roleRef as? String ?? "", settable: isSettable(el), web: isWebContent(el))
         return (landing, el, landing == .editable ? readValue(el) : nil)
     }
 

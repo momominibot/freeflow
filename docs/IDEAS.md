@@ -18,7 +18,8 @@ Rules every idea has to pass: it runs on this Mac, it keeps plain files, it need
 | MCP `workday_summary` (apps and minutes only) and `workday_detail` (cleaned screen text and typing notes, if switched on) | `scripts/freeflow-mcp.py` |
 | Deeper notes, each opt-in: the text on the front window, how I type (counts and finished lines), small pictures kept 3 days; redacted, 7-day expiry, forget, closer look by Hermes | `Sources/Detail.swift`, Workday page |
 | Double tap of the talk key to start hands-free (Wispr-style); a card with the words when a dictation did not reach a text box | `Sources/Input.swift`, `Sources/Unsent.swift` |
-| Learn from my own typing: a fix made twice is kept; accuracy meter | `Sources/Typing.swift`, Learning page |
+| Hermes hand-over: `hermes kanban create` to Levi (or Eren), Test the connection button; web-content boxes are trusted by the "did not reach a text box" card | `Sources/Workday.swift`, `Sources/Unsent.swift` |
+| Learn from my own typing: a clear spelling fix is kept the first time (after 20 s), anything less clear when made twice; accuracy meter | `Sources/Typing.swift`, Learning page |
 | One command that checks every function | `scripts/smoke.sh` |
 
 ## Next, in the order I would do them

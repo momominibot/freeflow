@@ -186,8 +186,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case "typing:on": self.settings.learnFromTyping = true; self.typing.start()
         case "typing:off": self.settings.learnFromTyping = false; self.typing.stop()
         case "typing:probe": self.log(self.typing.probe())
+        case "typing:once:on": self.settings.learnTypingAtOnce = true
+        case "typing:once:off": self.settings.learnTypingAtOnce = false
         case "unsent:show": self.unsent.show(text: "Test: this dictation did not reach a text box.", reason: "Shown by the check on this Mac.", onPasteAgain: { Inserter.paste($0) })
         case "unsent:hide": self.unsent.hide()
+        case "look":
+            // what the arrival check can see in the focused box right now: kinds and lengths only, never the text
+            let seen = Inserter.look()
+            var desc = "look: \(NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"): \(seen.landing)"
+            if let el = seen.element {
+                var role: CFTypeRef?, sub: CFTypeRef?
+                AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &role)
+                AXUIElementCopyAttributeValue(el, kAXSubroleAttribute as CFString, &sub)
+                let web = Inserter.isWebContent(el)
+                desc += ", role \(role as? String ?? "?"), subrole \(sub as? String ?? "none"), settable \(Inserter.isSettable(el)), web content \(web), value length \(seen.before?.count ?? -1)"
+            }
+            self.log(desc)
+        case "hermes:ping":
+            // a real card to the chosen agent with a harmless one-word job, to see the whole route work (runs on the local model)
+            DispatchQueue.global().async {
+                let r = Hermes.send("FreeFlow connection test (ignore)", "Reply with the single word OK. Do not use any tools and do not change anything. This is only a connection test from FreeFlow.")
+                DispatchQueue.main.async {
+                    switch r {
+                    case .success(let out): self.log("hermes: ping sent. \(out)")
+                    case .failure(let e): self.log("hermes: ping FAILED. \(e.message)")
+                    }
+                }
+            }
+        case "hermes:check":
+            Hermes.check { r in
+                switch r {
+                case .success(let out): self.log("hermes: connection works. \(out)")
+                case .failure(let e): self.log("hermes: connection FAILED. \(e.message)")
+                }
+            }
         case "gesture:double": self.settings.doubleTapToStart = true; self.doubleTap.expire()
         case "gesture:one": self.settings.doubleTapToStart = false; self.doubleTap.expire()
         case "workday:on": self.settings.workdayOn = true; self.workday.start()
@@ -574,7 +606,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func done(_ id: Int, _ outcome: Outcome?, file: URL, keepOverlay: Bool = false) {
         if settings.keepTakes, var o = outcome, !o.text.isEmpty {
             o.engine = settings.engine.rawValue
-            TakeStore.keep(file, engine: o.engine, heard: o.raw, final: o.text, mode: o.mode)
+            TakeStore.keep(file, engine: o.engine, heard: o.raw, final: o.text, mode: o.mode,
+                           in: settings.takesDir, limit: settings.takesLimit, maxAgeDays: settings.takesDays)
         }
         try? FileManager.default.removeItem(at: file)
         inFlight -= 1
@@ -926,7 +959,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func wireBridge() {
         bridge.typingChanged = { [weak self] in
             guard let self = self else { return }
-            if self.settings.learnFromTyping { self.typing.start() } else { self.typing.stop() }
+            if self.settings.learnFromTyping { self.typing.start(); self.typing.keepEarlierFixes() } else { self.typing.stop() }
         }
         bridge.workdayChanged = { [weak self] in
             guard let self = self else { return }
@@ -1082,20 +1115,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showTakes() {
-        try? FileManager.default.createDirectory(at: Paths.takes, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(Paths.takes)
+        let dir = settings.takesDir
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(dir)
     }
 
     @objc private func deleteTakes() {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "Delete all saved recordings?"
-        alert.informativeText = "This removes the audio and the text saved with it. It can't be undone."
+        let dir = settings.takesDir
+        alert.informativeText = "This removes the audio and the text saved with it from \(dir.path). Other files in that folder are left alone. It can't be undone."
         alert.addButton(withTitle: "Delete")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        try? FileManager.default.removeItem(at: Paths.takes)
-        overlay.flash("Saved recordings deleted", seconds: 2)
+        let n = TakeStore.deleteAll(in: dir)
+        overlay.flash("Saved recordings deleted (\(n))", seconds: 2)
     }
 
     private func announceLearned(_ pairs: [Learning.Pair]) {

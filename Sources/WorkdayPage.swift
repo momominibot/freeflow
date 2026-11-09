@@ -118,16 +118,24 @@ struct WorkdayPage: View {
                 .buttonStyle(GhostButton(danger: true))
             }
             if Hermes.available {
+                SettingRow(title: "Send to", note: "Levi builds scripts and scheduled tasks from what he finds. Eren hands it to whoever fits. Both run on this Mac's own model, so the notes do not leave it.") {
+                    ChipPicker(options: Settings.hermesAgents.map { ($0.id, $0.name) },
+                               selection: model.bind({ model.settings.hermesAgent }, { model.settings.hermesAgent = $0 }))
+                }
                 HStack(spacing: 10) {
                     Button("Ask Hermes for a closer look") {
-                        switch Hermes.send("Closer look at how I work", Hermes.deepReviewBrief(days: 7)) {
-                        case .success(let out): deepNote = "Sent. Hermes reads the files on this Mac and sends back proposals; it changes nothing without your yes. " + out
-                        case .failure(let e): deepNote = "Could not send: \(e.message)"
+                        deepNote = "Sending to Hermes… this takes a few seconds."
+                        Hermes.sendAsync("Closer look at how I work", Hermes.deepReviewBrief(days: 7)) { r in
+                            switch r {
+                            case .success(let out): deepNote = "Sent. Hermes reads the files on this Mac and sends back proposals; it changes nothing without your yes. " + out
+                            case .failure(let e): deepNote = "Could not send: \(e.message)"
+                            }
                         }
                     }
                     .buttonStyle(PrimaryButton(small: true))
                     Button("Copy the brief") { Inserter.copy(Hermes.deepReviewBrief(days: 7)); deepNote = "Copied. Paste it to any agent that can read files on this Mac." }
                         .buttonStyle(GhostButton())
+                    Button("Test the connection") { testHermes() }.buttonStyle(GhostButton())
                 }
             } else {
                 Button("Copy the brief for an agent") { Inserter.copy(Hermes.deepReviewBrief(days: 7)); deepNote = "Copied. Paste it to any agent that can read files on this Mac." }
@@ -177,15 +185,28 @@ struct WorkdayPage: View {
         }
     }
 
+    private func testHermes() {
+        deepNote = "Testing the connection… this takes a few seconds."
+        Hermes.check { r in
+            switch r {
+            case .success(let out): deepNote = out
+            case .failure(let e): deepNote = "The connection does not work: \(e.message)"
+            }
+        }
+    }
+
     @ViewBuilder
     private func hermesControls(_ s: Suggestion) -> some View {
         HStack(spacing: 10) {
             if Hermes.available {
                 Button("Send to Hermes") {
                     Hermes.saveBrief(s)
-                    switch Hermes.send(s.title, s.text) {
-                    case .success(let out): notes[s.id] = "Sent. " + out
-                    case .failure(let e): notes[s.id] = "Could not send: \(e.message)"
+                    notes[s.id] = "Sending to Hermes… this takes a few seconds."
+                    Hermes.sendAsync(s.title, s.text) { r in
+                        switch r {
+                        case .success(let out): notes[s.id] = "Sent. " + out
+                        case .failure(let e): notes[s.id] = "Could not send: \(e.message)"
+                        }
                     }
                 }
                 .buttonStyle(PrimaryButton(small: true))

@@ -640,7 +640,7 @@ struct LearningPage: View {
                 Toggle(isOn: typing) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Learn from my own typing").font(Fonts.sans(15, .heavy)).foregroundColor(RT.ink)
-                        Text("When you type a name wrongly, backspace and write it again, FreeFlow remembers the spelling after you have done it twice, so it hears it right next time. It does not record keystrokes: it looks at the line you are typing on every half second and keeps only that word. Never in password fields, password managers or terminals. Off until you switch it on.")
+                        Text("When you type a name wrongly, backspace and write it again, FreeFlow remembers the spelling, so it hears it right next time: the first time when it is plainly a spelling fix (a few letters off), after the second time otherwise. It does not record keystrokes: it looks at the line you are typing on every half second and keeps only that word. Never in password fields, password managers or terminals. Off until you switch it on.")
                             .font(Fonts.sans(12.5, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
                     }
                 }

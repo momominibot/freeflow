@@ -220,11 +220,46 @@ final class Settings {
         set { d.set(newValue, forKey: "keepTakes") }
     }
 
+    /// Which Hermes agent gets the briefs: Levi builds scripts and scheduled tasks, Eren hands it to whoever fits. Both run on this
+    /// Mac's own model, so nothing in the notes leaves it.
+    static let hermesAgents: [(id: String, name: String)] = [("levi", "Levi"), ("eren", "Eren")]
+    var hermesAgent: String {
+        get { let v = d.string(forKey: "hermesAgent") ?? "levi"; return Settings.hermesAgents.contains { $0.id == v } ? v : "levi" }
+        set { d.set(newValue, forKey: "hermesAgent") }
+    }
+
+    /// How many recordings to keep (the newest), how many days to keep them (0 = no age limit), and where (empty = FreeFlow's own folder).
+    static let takesLimitChoices = [25, 100, 500, 2000]
+    static let takesDaysChoices = [0, 7, 30, 90]
+    var takesLimit: Int {
+        get { let v = d.integer(forKey: "takesLimit"); return v > 0 ? v : 100 }
+        set { d.set(newValue, forKey: "takesLimit") }
+    }
+    var takesDays: Int {
+        get { max(0, d.integer(forKey: "takesDays")) }
+        set { d.set(newValue, forKey: "takesDays") }
+    }
+    var takesFolderPath: String {
+        get { d.string(forKey: "takesFolder") ?? "" }
+        set { if newValue.isEmpty { d.removeObject(forKey: "takesFolder") } else { d.set(newValue, forKey: "takesFolder") } }
+    }
+    var takesDir: URL {
+        let p = (takesFolderPath as NSString).expandingTildeInPath
+        return p.isEmpty ? Paths.takes : URL(fileURLWithPath: p, isDirectory: true)
+    }
+
     /// Learn words from the corrections you make to text FreeFlow typed. On by default; the pairs stay in learned.txt.
     /// Learn from fixes made in your own typing, not only in text FreeFlow typed. Off until you switch it on.
     var learnFromTyping: Bool {
         get { d.bool(forKey: "learnFromTyping") }
         set { d.set(newValue, forKey: "learnFromTyping") }
+    }
+
+    /// Keep a fix of your own typing the first time you make it, when it is clearly a spelling fix. On by default; off means
+    /// every fix must be seen twice.
+    var learnTypingAtOnce: Bool {
+        get { d.object(forKey: "learnTypingAtOnce") as? Bool ?? true }
+        set { d.set(newValue, forKey: "learnTypingAtOnce") }
     }
 
     /// Fixes seen once so far (the same fix must be seen twice before it is kept): a spelling and how many times.
@@ -427,9 +462,26 @@ final class Settings {
 
 /// Opt-in saved recordings, for comparing speech engines on your own voice. Local only.
 enum TakeStore {
-    /// Copies a finished take and what each stage produced next to it, keeping the newest `limit`.
+    /// A file FreeFlow wrote: 20261109-185331-01-whisper.wav or .json. Anything else in the folder is never touched.
+    static func isTakeFile(_ name: String) -> Bool {
+        name.range(of: #"^\d{8}-\d{6}-\d{2}-[A-Za-z0-9_.-]+\.(wav|json)$"#, options: .regularExpression) != nil
+    }
+
+    /// Removes every recording FreeFlow wrote in the folder (the folder itself and other files stay). The number removed.
+    @discardableResult
+    static func deleteAll(in dir: URL) -> Int {
+        let fm = FileManager.default
+        var n = 0
+        for name in (try? fm.contentsOfDirectory(atPath: dir.path)) ?? [] where isTakeFile(name) {
+            if (try? fm.removeItem(at: dir.appendingPathComponent(name))) != nil, name.hasSuffix(".wav") { n += 1 }
+        }
+        return n
+    }
+
+    /// Copies a finished take and what each stage produced next to it, keeping the newest `limit`, and nothing older than
+    /// `maxAgeDays` days when that is above 0.
     static func keep(_ file: URL, engine: String, heard: String, final: String, mode: String,
-                     in dir: URL = Paths.takes, limit: Int = 100, now: Date = Date()) {
+                     in dir: URL = Paths.takes, limit: Int = 100, maxAgeDays: Int = 0, now: Date = Date()) {
         let fm = FileManager.default
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         let f = DateFormatter()
@@ -447,11 +499,16 @@ enum TakeStore {
         if let data = try? JSONSerialization.data(withJSONObject: meta, options: [.prettyPrinted]) {
             try? data.write(to: dir.appendingPathComponent(stem + ".json"))
         }
-        let wavs = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasSuffix(".wav") }.sorted()
-        for old in wavs.dropLast(limit) {
-            let base = (old as NSString).deletingPathExtension
+        let wavs = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).filter { isTakeFile($0) && $0.hasSuffix(".wav") }.sorted()
+        func drop(_ wav: String) {
+            let base = (wav as NSString).deletingPathExtension
             try? fm.removeItem(at: dir.appendingPathComponent(base + ".wav"))
             try? fm.removeItem(at: dir.appendingPathComponent(base + ".json"))
+        }
+        for old in wavs.dropLast(max(1, limit)) { drop(old) }
+        if maxAgeDays > 0 {
+            let cutoff = now.addingTimeInterval(-Double(maxAgeDays) * 86_400)
+            for name in wavs where (f.date(from: String(name.prefix(15))) ?? .distantFuture) < cutoff { drop(name) }
         }
     }
 }

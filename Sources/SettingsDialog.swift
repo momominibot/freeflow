@@ -430,7 +430,10 @@ struct PrivacyTab: View {
     var body: some View {
         let keep = model.bind({ s.keepTakes }, { s.keepTakes = $0 })
         let learn = model.bind({ s.learnFromFixes }, { s.learnFromFixes = $0 })
+        let takesLimit = model.bind({ s.takesLimit }, { s.takesLimit = $0 })
+        let takesDays = model.bind({ s.takesDays }, { s.takesDays = $0 })
         let typingLearn = model.bind({ s.learnFromTyping }, { s.learnFromTyping = $0 }, then: model.bridge.typingChanged)
+        let typingOnce = model.bind({ s.learnTypingAtOnce }, { s.learnTypingAtOnce = $0 }, then: model.bridge.typingChanged)
 
         Text("Nothing you say is sent online. Speech is turned into words on this Mac, and so is the tidy-up.")
             .font(Fonts.sans(14, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
@@ -439,6 +442,25 @@ struct PrivacyTab: View {
             Toggle(isOn: keep) { RowLabel(title: "Keep my recordings on this Mac", note: "Lets you compare speech engines on your own voice. Off by default; the audio is otherwise deleted right after it is written down.") }
                 .toggleStyle(RhythmeToggleStyle())
             if s.keepTakes {
+                SettingRow(title: "How many to keep", note: "The newest ones. Older ones are deleted as new ones come in.") {
+                    ChipPicker(options: Settings.takesLimitChoices.map { ($0, "\($0)") }, selection: takesLimit)
+                }
+                SettingRow(title: "How long to keep them", note: "Recordings older than this are deleted, whatever the count.") {
+                    ChipPicker(options: Settings.takesDaysChoices.map { ($0, $0 == 0 ? "Forever" : "\($0) days") }, selection: takesDays)
+                }
+                SettingRow(title: "Where they are saved", note: s.takesFolderPath.isEmpty ? "FreeFlow's own folder (Application Support › FreeFlow › takes)." : s.takesFolderPath) {
+                    HStack(spacing: 8) {
+                        Button("Choose folder…") {
+                            let panel = NSOpenPanel()
+                            panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
+                            panel.prompt = "Save recordings here"
+                            if panel.runModal() == .OK, let url = panel.url { model.objectWillChange.send(); s.takesFolderPath = url.path }
+                        }.buttonStyle(GhostButton())
+                        if !s.takesFolderPath.isEmpty {
+                            Button("Use the default") { model.objectWillChange.send(); s.takesFolderPath = "" }.buttonStyle(GhostButton())
+                        }
+                    }
+                }
                 HStack(spacing: 10) {
                     Button("Show recordings") { model.bridge.showTakes() }.buttonStyle(GhostButton())
                     Button("Delete recordings") { model.bridge.deleteTakes() }.buttonStyle(GhostButton(danger: true))
@@ -446,8 +468,12 @@ struct PrivacyTab: View {
             }
             Toggle(isOn: learn) { RowLabel(title: "Learn from my corrections", note: "After FreeFlow types, it reads that one text box for a few minutes (never password fields) to see which words you fixed. Only the word pairs are kept.") }
                 .toggleStyle(RhythmeToggleStyle())
-            Toggle(isOn: typingLearn) { RowLabel(title: "Learn from my own typing", note: "When you backspace a wrongly typed name and write it again, it remembers the spelling after twice. No keystrokes are recorded, nothing in password fields, password managers or terminals. Off by default.") }
+            Toggle(isOn: typingLearn) { RowLabel(title: "Learn from my own typing", note: "When you backspace a wrongly typed name and write it again, it remembers the spelling. No keystrokes are recorded, nothing in password fields, password managers or terminals. Off by default.") }
                 .toggleStyle(RhythmeToggleStyle())
+            if s.learnFromTyping {
+                Toggle(isOn: typingOnce) { RowLabel(title: "Keep a clear fix the first time", note: "Only when it is plainly a spelling fix (a few letters off, not a half-deleted word), and after it has stood for 20 seconds, so a word you change again is not kept. Off, every fix must be seen twice.") }
+                    .toggleStyle(RhythmeToggleStyle())
+            }
             SettingRow(title: "See what it learned", note: "And whether you need fewer fixes over time.") {
                 Button("Open Learning") { model.settingsTab = nil; model.page = .learning }.buttonStyle(GhostButton())
             }
