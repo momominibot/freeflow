@@ -7,6 +7,8 @@ struct WorkdayPage: View {
     @State private var cues: [String: String] = [:]
     @State private var notes: [String: String] = [:]
     @State private var forgotten = false
+    @State private var forgottenDeep = false
+    @State private var deepNote = ""
     private let store = LaunchAgentStore()
 
     private func minutes(_ m: Int) -> String { m >= 60 ? "\(m / 60) h \(m % 60) min" : "\(m) min" }
@@ -15,7 +17,7 @@ struct WorkdayPage: View {
         let on = model.bind({ model.settings.workdayOn }, { model.settings.workdayOn = $0 }, then: model.bridge.workdayChanged)
         PageScroll {
             PageTitle(title: "Workday",
-                      subtitle: "FreeFlow can keep a private log of which app and window you are in, then point out routines worth automating. It keeps no screenshots and no text from your screen, nothing leaves this Mac, and it forgets after 14 days.")
+                      subtitle: "FreeFlow can keep a private log of which app and window you are in, then point out routines worth automating. By itself it keeps no screenshots and no text from your screen. The deeper notes below add that, only if you switch them on. Nothing leaves this Mac unless you press a button, and it forgets after 14 days (7 for the deeper notes).")
 
             VStack(alignment: .leading, spacing: 14) {
                 Toggle(isOn: on) {
@@ -38,6 +40,9 @@ struct WorkdayPage: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .rtCard(padding: 22)
+
+            SectionTitle(text: "Deeper notes")
+            deeperCard()
 
             SectionTitle(text: "Today")
             if model.workdayToday.isEmpty {
@@ -68,6 +73,72 @@ struct WorkdayPage: View {
                 VStack(spacing: 14) { ForEach(model.suggestions) { row($0) } }
             }
         }
+    }
+
+    // MARK: - Deeper notes
+
+    @ViewBuilder
+    private func deeperCard() -> some View {
+        let screen = model.bind({ model.settings.screenTextOn }, { model.settings.screenTextOn = $0 }, then: model.bridge.detailChanged)
+        let typing = model.bind({ model.settings.typingDetailOn }, { model.settings.typingDetailOn = $0 }, then: model.bridge.detailChanged)
+        let pics = model.bind({ model.settings.keepPictures }, { model.settings.keepPictures = $0 }, then: model.bridge.detailChanged)
+        VStack(alignment: .leading, spacing: 14) {
+            Text("These give an agent such as Hermes something to read, so it can find work you repeat and suggest scheduled tasks. They are plain files in a folder on this Mac. Emails, links, keys, long numbers and any line that mentions a password are swapped for a tag before anything is written. Password managers, terminals, private windows and the words you list under Hide more windows are never read.")
+                .font(Fonts.sans(12.5, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
+            Toggle(isOn: screen) {
+                RowLabel(title: "Read the text on my screen",
+                         note: "About every \(Int(model.settings.detailInterval / 60)) minutes while you work, FreeFlow reads the words on the front window on this Mac and keeps the words. The picture is thrown away at once. Needs Screen Recording to be allowed for FreeFlow.")
+            }
+            .toggleStyle(RhythmeToggleStyle())
+            if model.settings.screenTextOn && !model.screenAllowed {
+                Text("Screen Recording is not allowed for FreeFlow yet, so nothing is read. Allow it in System Settings > Privacy & Security > Screen & System Audio Recording.")
+                    .font(Fonts.sans(12.5, .semibold)).foregroundColor(RT.warn).fixedSize(horizontal: false, vertical: true)
+            }
+            Toggle(isOn: typing) {
+                RowLabel(title: "Note how I type",
+                         note: "Each minute: how much you typed and deleted, and the lines you finished writing (cleaned). It does not log keys, only what a text box shows after you pause. Works in apps whose text boxes can be read.")
+            }
+            .toggleStyle(RhythmeToggleStyle())
+            Toggle(isOn: pics) {
+                RowLabel(title: "Keep small pictures of the window too",
+                         note: "For an agent that can look at images. Kept for 3 days, then deleted. Off unless you switch it on.")
+            }
+            .toggleStyle(RhythmeToggleStyle())
+            HStack(spacing: 10) {
+                Circle().fill((model.settings.screenTextOn || model.settings.typingDetailOn) ? RT.ok : RT.ink3).frame(width: 8, height: 8)
+                Text("Today: \(model.detailToday.screen) screen reads, \(model.detailToday.typing) typing minutes")
+                    .font(Fonts.sans(12.5, .medium)).foregroundColor(RT.ink3)
+                Spacer()
+                Button("Open the folder") { try? FileManager.default.createDirectory(at: DetailStore.dir, withIntermediateDirectories: true); NSWorkspace.shared.open(DetailStore.dir) }
+                    .buttonStyle(GhostButton())
+                Button(forgottenDeep ? "Forgotten" : "Forget the deeper notes") {
+                    DetailStore.forgetAll(); forgottenDeep = true; model.reload()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { forgottenDeep = false }
+                }
+                .buttonStyle(GhostButton(danger: true))
+            }
+            if Hermes.available {
+                HStack(spacing: 10) {
+                    Button("Ask Hermes for a closer look") {
+                        switch Hermes.send("Closer look at how I work", Hermes.deepReviewBrief(days: 7)) {
+                        case .success(let out): deepNote = "Sent. Hermes reads the files on this Mac and sends back proposals; it changes nothing without your yes. " + out
+                        case .failure(let e): deepNote = "Could not send: \(e.message)"
+                        }
+                    }
+                    .buttonStyle(PrimaryButton(small: true))
+                    Button("Copy the brief") { Inserter.copy(Hermes.deepReviewBrief(days: 7)); deepNote = "Copied. Paste it to any agent that can read files on this Mac." }
+                        .buttonStyle(GhostButton())
+                }
+            } else {
+                Button("Copy the brief for an agent") { Inserter.copy(Hermes.deepReviewBrief(days: 7)); deepNote = "Copied. Paste it to any agent that can read files on this Mac." }
+                    .buttonStyle(GhostButton())
+            }
+            if !deepNote.isEmpty {
+                Text(deepNote).font(Fonts.sans(12.5, .semibold)).foregroundColor(RT.mauve).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .rtCard(padding: 22)
     }
 
     // MARK: - One idea

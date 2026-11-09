@@ -37,6 +37,9 @@ final class AppBridge {
     var aiReady: () -> Bool = { false }
     var installingQwen: () -> Bool = { false }
     var workdayChanged: () -> Void = {}
+    var detailChanged: () -> Void = {}
+    var dockChanged: () -> Void = {}
+    var typingChanged: () -> Void = {}
 }
 
 // MARK: - Reading the files on disk
@@ -230,7 +233,10 @@ final class StudioModel: ObservableObject {
     @Published var screenOK = false
     @Published var workdayToday: [WorkdayAnalysis.AppTime] = []
     @Published var workdayDays = 0
+    @Published var detailToday: (screen: Int, typing: Int) = (0, 0)
+    @Published var screenAllowed = false
     @Published var suggestions: [Suggestion] = []
+    @Published var learningWeeks: (this: LearningStats.Week, last: LearningStats.Week) = (LearningStats.Week(fixes: 0, words: 0), LearningStats.Week(fixes: 0, words: 0))
     @Published var fileJob: (name: String, progress: Double)?
     @Published var summarizing: Set<String> = []
     @Published var scratch: [ScratchNote] = []
@@ -266,10 +272,15 @@ final class StudioModel: ObservableObject {
         summarizing = bridge.summarizing()
         scratch = ScratchStore.list()
         if page == .insights { daily = HistoryReader.dailyWords(HistoryReader.readAll()) }
+        if page == .learning {
+            learningWeeks = LearningStats.weeks(fixesByDay: settings.fixesByDay, daily: HistoryReader.dailyWords(HistoryReader.readAll()))
+        }
         if page == .workday {
             let segs = WorkdayStore.load()
             workdayToday = WorkdayAnalysis.today(segs)
             workdayDays = WorkdayAnalysis.daysWithData(segs)
+            detailToday = (DetailStore.count(kind: "screen"), DetailStore.count(kind: "typing"))
+            screenAllowed = ScreenText.allowed
             suggestions = Suggestions.list(segments: segs, history: h.entries)
         }
     }
@@ -373,7 +384,7 @@ struct StudioView: View {
 
 struct Sidebar: View {
     @ObservedObject var model: StudioModel
-    private let top: [StudioModel.Page] = [.home, .meetings, .insights, .dictionary, .snippets, .modes, .transforms, .scratchpad, .workday]
+    private let top: [StudioModel.Page] = [.home, .meetings, .insights, .dictionary, .snippets, .modes, .transforms, .scratchpad, .learning, .workday]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -601,8 +612,41 @@ struct LearningPage: View {
 
     var body: some View {
         let on = model.bind({ model.settings.learnFromFixes }, { model.settings.learnFromFixes = $0 })
+        let typing = model.bind({ model.settings.learnFromTyping }, { model.settings.learnFromTyping = $0 }, then: model.bridge.typingChanged)
         PageScroll {
             PageTitle(title: "Learning", subtitle: "Fix a word in the text FreeFlow typed and it remembers. The more you use it, the more it sounds like you.")
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Is it getting better?").font(Fonts.serif(20)).foregroundColor(RT.plum)
+                HStack(spacing: 22) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(String(format: "%.1f", model.learningWeeks.this.per100)).font(Fonts.serif(30)).foregroundColor(RT.plum)
+                        Text("fixes per 100 words this week").font(Fonts.sans(12, .bold)).foregroundColor(RT.ink2)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.learningWeeks.last.words >= 100 ? String(format: "%.1f", model.learningWeeks.last.per100) : "\u{2013}").font(Fonts.serif(30)).foregroundColor(RT.ink2)
+                        Text("last week").font(Fonts.sans(12, .bold)).foregroundColor(RT.ink3)
+                    }
+                }
+                Text(LearningStats.verdict(this: model.learningWeeks.this, last: model.learningWeeks.last))
+                    .font(Fonts.sans(13, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
+                Text("A fix is a word you corrected after FreeFlow typed it. Fewer per 100 words, over weeks, means it is getting more accurate for you. This is the vocabulary it learns (spellings and swaps), not a retrained voice model.")
+                    .font(Fonts.sans(12, .medium)).foregroundColor(RT.ink3).fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .rtCard(padding: 22)
+
+            VStack(alignment: .leading, spacing: 14) {
+                Toggle(isOn: typing) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Learn from my own typing").font(Fonts.sans(15, .heavy)).foregroundColor(RT.ink)
+                        Text("When you type a name wrongly, backspace and write it again, FreeFlow remembers the spelling after you have done it twice, so it hears it right next time. It does not record keystrokes: it looks at the line you are typing on every half second and keeps only that word. Never in password fields, password managers or terminals. Off until you switch it on.")
+                            .font(Fonts.sans(12.5, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .toggleStyle(RhythmeToggleStyle())
+            }
+            .rtCard(padding: 20)
             VStack(alignment: .leading, spacing: 14) {
                 Toggle(isOn: on) {
                     VStack(alignment: .leading, spacing: 3) {
@@ -765,6 +809,7 @@ extension TalkKey {
         switch self {
         case .rightOption: return "Right Option"
         case .fn: return "Fn"
+        case .leftControl: return "Left Control"
         case .rightCommand: return "Right Command"
         case .rightControl: return "Right Control"
         }
@@ -857,7 +902,8 @@ final class StudioWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        // Back to the menu bar only, unless the Dock icon was asked for.
+        NSApp.setActivationPolicy(Settings.shared.showInDock ? .regular : .accessory)
     }
 
     /// The window's id, for screenshots.

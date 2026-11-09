@@ -134,6 +134,8 @@ struct GeneralTab: View {
             if s.commandKey == k { s.commandKey = TalkKey.allCases.first { other in other != k } ?? .rightControl }
         }, then: model.bridge.hotkeysChanged)
         let tap = model.bind({ s.tapToToggle }, { s.tapToToggle = $0 })
+        let dbl = model.bind({ s.doubleTapToStart }, { s.doubleTapToStart = $0 })
+        let unsentPop = model.bind({ s.unsentPopup }, { s.unsentPopup = $0 })
         let lang = model.bind({ s.language }, { s.language = $0 })
         let clean = model.bind({ s.cleanupLevel }, { s.cleanupLevel = $0 }, then: model.bridge.cleanupChanged)
         let fillers = model.bind({ s.removeFillers }, { s.removeFillers = $0 })
@@ -142,10 +144,17 @@ struct GeneralTab: View {
         let look = model.bind({ s.appearance }, { s.appearance = $0 }, then: { AppearanceChoice.applySaved() })
 
         SettingsCard(title: "Shortcuts") {
-            SettingRow(title: "Talk key", note: s.talkKey == .fn ? "Tip: Keyboard settings › Press 🌐 key to › Do Nothing." : nil) {
+            SettingRow(title: "Talk key", note: s.talkKey == .fn ? "Tip: if Fn switches your language or opens emoji, set Keyboard settings › Press 🌐 key to › Do Nothing." : s.talkKey == .leftControl ? "Any other key pressed while Control is down cancels, so shortcuts like Ctrl+C are safe. Holding it while you click or drag starts a dictation." : nil) {
                 ChipPicker(options: TalkKey.allCases.map { ($0, $0.chipTitle) }, selection: talk)
             }
             Toggle(isOn: tap) { RowLabel(title: "Tap to start, tap again to finish", note: "Holding the key still works like push-to-talk.") }
+                .toggleStyle(RhythmeToggleStyle())
+            if s.tapToToggle {
+                SettingRow(title: "Start and finish hands-free with", note: s.doubleTapToStart ? "Two quick taps start it and two finish it, so one accidental press does nothing. Holding the key for a moment also finishes." : "One quick tap starts it. Another tap finishes.") {
+                    ChipPicker(options: [(false, "One tap"), (true, "Double tap")], selection: dbl)
+                }
+            }
+            Toggle(isOn: unsentPop) { RowLabel(title: "Pop-up when words can't be typed", note: "If a dictation does not reach a text box, a card shows the words with a Copy button. They are always in your history too.") }
                 .toggleStyle(RhythmeToggleStyle())
             Toggle(isOn: cmdOn) { RowLabel(title: "Edit by voice", note: model.aiOK ? "Select text, hold the command key and say \u{201C}make this shorter\u{201D}." : "Needs Ollama running. Start it and this turns on.") }
                 .toggleStyle(RhythmeToggleStyle())
@@ -208,10 +217,13 @@ struct SystemTab: View {
     var body: some View {
         let sounds = model.bind({ s.sounds }, { s.sounds = $0 })
         let idle = model.bind({ s.showIdleBar }, { s.showIdleBar = $0 }, then: model.bridge.idleBarChanged)
+        let dock = model.bind({ s.showInDock }, { s.showInDock = $0 }, then: model.bridge.dockChanged)
         let login = Binding(get: { model.loginOK }, set: { _ in model.bridge.toggleLogin(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.reload() } })
 
         SettingsCard(title: "App settings") {
             Toggle(isOn: login) { RowLabel(title: "Launch app at login", note: nil) }.toggleStyle(RhythmeToggleStyle())
+            Toggle(isOn: dock) { RowLabel(title: "Show FreeFlow in the Dock", note: "FreeFlow lives in the menu bar at the top of the screen (the little face). Turn this on to also keep a Dock icon that opens its window.") }
+                .toggleStyle(RhythmeToggleStyle())
             Toggle(isOn: idle) { RowLabel(title: "Show the bar at all times", note: "A tiny sleepy face at the bottom of the screen when FreeFlow is idle.") }
                 .toggleStyle(RhythmeToggleStyle())
         }
@@ -418,6 +430,7 @@ struct PrivacyTab: View {
     var body: some View {
         let keep = model.bind({ s.keepTakes }, { s.keepTakes = $0 })
         let learn = model.bind({ s.learnFromFixes }, { s.learnFromFixes = $0 })
+        let typingLearn = model.bind({ s.learnFromTyping }, { s.learnFromTyping = $0 }, then: model.bridge.typingChanged)
 
         Text("Nothing you say is sent online. Speech is turned into words on this Mac, and so is the tidy-up.")
             .font(Fonts.sans(14, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
@@ -431,8 +444,13 @@ struct PrivacyTab: View {
                     Button("Delete recordings") { model.bridge.deleteTakes() }.buttonStyle(GhostButton(danger: true))
                 }
             }
-            Toggle(isOn: learn) { RowLabel(title: "Learn from my corrections", note: "After FreeFlow types, it reads that one text box for about a minute (never password fields) to see which words you fixed. Only the word pairs are kept.") }
+            Toggle(isOn: learn) { RowLabel(title: "Learn from my corrections", note: "After FreeFlow types, it reads that one text box for a few minutes (never password fields) to see which words you fixed. Only the word pairs are kept.") }
                 .toggleStyle(RhythmeToggleStyle())
+            Toggle(isOn: typingLearn) { RowLabel(title: "Learn from my own typing", note: "When you backspace a wrongly typed name and write it again, it remembers the spelling after twice. No keystrokes are recorded, nothing in password fields, password managers or terminals. Off by default.") }
+                .toggleStyle(RhythmeToggleStyle())
+            SettingRow(title: "See what it learned", note: "And whether you need fewer fixes over time.") {
+                Button("Open Learning") { model.settingsTab = nil; model.page = .learning }.buttonStyle(GhostButton())
+            }
         }
 
         SettingsCard(title: "Your data") {

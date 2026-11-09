@@ -241,9 +241,15 @@ end run
 EOF
 }
 
-relaunch_app() {
+# Keystrokes only go out while TextEdit is verified to be in front: never into whatever else happens to hold the focus.
+te_front() { local i=0; while [ $i -lt 24 ]; do osascript -e 'tell application "TextEdit" to activate' >/dev/null 2>&1; [ "$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null)" = TextEdit ] && return 0; sleep 0.25; i=$((i+1)); done; return 1; }
+tp() { te_front || return 1; osascript -e "tell application \"System Events\" to keystroke \"$1\"" >/dev/null 2>&1; }
+bk() { te_front || return 1; osascript -e 'tell application "System Events"' -e "repeat $1 times" -e 'key code 51' -e 'end repeat' -e 'end tell' >/dev/null 2>&1; }
+nl() { te_front || return 1; osascript -e 'tell application "System Events" to key code 36' >/dev/null 2>&1; }
+
+relaunch_app() {   # relaunch_app [launch arguments for FreeFlow...]
   pkill -x FreeFlow >/dev/null 2>&1; sleep 1; pkill -9 -x FreeFlow >/dev/null 2>&1; sleep 0.5
-  open "$APP"
+  if [ $# -gt 0 ]; then open "$APP" --args "$@"; else open "$APP"; fi
   wait_for 40 pgrep -x FreeFlow
   # the speech engine is up when its port answers
   wait_for 90 sh -c 'curl -s -o /dev/null http://127.0.0.1:8178/'
@@ -278,7 +284,7 @@ restore_data() {
   for x in $(ls "$SUP/meetings" 2>/dev/null); do grep -qxF -- "$x" "$WORK/data/meetings.list" || rm -rf "$SUP/meetings/$x"; done
   [ -f "$WORK/data/prefs.plist" ] && defaults import $DOM "$WORK/data/prefs.plist" >/dev/null 2>&1
   # import adds and changes keys but never removes one, so take out every key the run introduced
-  for k in debugTriggers workdayInterval workdayOn; do
+  for k in debugTriggers workdayInterval workdayOn meetingMode meetingCountdown learnFromTyping typingSeen fixesByDay screenTextOn typingDetailOn keepPictures detailInterval doubleTapToStart unsentPopup showInDock; do
     plutil -extract "$k" raw -o - "$WORK/data/prefs.plist" >/dev/null 2>&1 || defaults delete $DOM "$k" >/dev/null 2>&1
   done
   open "$APP"
@@ -287,6 +293,7 @@ restore_data() {
 live_ui() {
   stage "The window: every page, button and setting"
   mkdir -p "$WORK/tools"
+  swiftc -O scripts/tools/winsof.swift -o "$WORK/winsof" -framework CoreGraphics >/dev/null 2>&1
   if swiftc -O scripts/tools/axclick.swift -o "$WORK/axclick" -framework AppKit -framework ApplicationServices >"$WORK/axbuild.log" 2>&1; then AX="$WORK/axclick"; else bad "could not build the Accessibility helper"; tail -3 "$WORK/axbuild.log"; return; fi
   press()  { "$AX" FreeFlow press "$1" >/dev/null 2>&1; sleep "${2:-0.7}"; }
   has()    { "$AX" FreeFlow list 2>/dev/null | grep -qF -- "$1"; }
@@ -304,6 +311,8 @@ live_ui() {
   press Tone;        see "Tone page" "How should it write?"
   press Rewrites;    see "Rewrites page" "Make it shorter"
   press Jots;        see "Jots page" "Save note"
+  press Learning;    see "Learning page" "Is it getting better?"
+  see "Learning page offers learning from your own typing" "Learn from my own typing"
   press Help;        see "Help page" "Quick start"
   press Home
   press Search;      see "Dictation search opens" "AXTextField"
@@ -385,6 +394,22 @@ live_voice() {
   post tap; sleep 1.5; play tapmode; sleep 0.8; post tap
   if wait_for 30 te_has venue; then ok "tap to start, tap again to finish types what was said: \"$(te_text | tr '\n' ' ' | cut -c1-60)\""; else bad "tap-to-start dictation did not arrive"; logsince "$off" | tail -4; fi
 
+  # double tap (as in Wispr Flow): one quick tap starts nothing, two quick taps start hands-free, two quick taps finish
+  post gesture:double; te_new; off=$(loglen)
+  post tap; sleep 1.2
+  logsaw "$off" "one quick tap, waiting for a second" && ok "double-tap mode: one quick tap on its own starts nothing" || bad "double-tap mode: the single tap was not ignored"
+  logsaw "$off" "double tap, hands-free is on" && bad "double-tap mode: one tap started hands-free" || ok "double-tap mode: one tap did not start hands-free"
+  off=$(loglen)
+  post tap:double; sleep 1.5
+  logsaw "$off" "double tap, hands-free is on" && ok "double-tap mode: two quick taps start hands-free" || bad "double-tap mode: two taps did not start hands-free"
+  post tap; sleep 1.2        # one stray tap while listening must not end it
+  logsaw "$off" "one quick tap while listening" && ok "double-tap mode: one tap while listening is ignored" || bad "double-tap mode: the single tap while listening was not noticed"
+  logsaw "$off" "double tap, finishing" && bad "double-tap mode: one tap finished the dictation" || ok "double-tap mode: one tap did not finish it"
+  play tapmode; sleep 0.8; post tap:double
+  wait_for 10 logsaw "$off" "double tap, finishing" && ok "double-tap mode: two quick taps finish it" || bad "double-tap mode: two taps did not finish it"
+  if wait_for 30 te_has venue; then ok "double tap to start and to finish types what was said: \"$(te_text | tr '\n' ' ' | cut -c1-60)\""; else bad "double-tap dictation did not arrive"; logsince "$off" | tail -4; fi
+  post gesture:one
+
   # a snippet expands the words said into the text saved for them
   te_new; off=$(loglen)
   post down; sleep 1; play snippet; sleep 0.7; post up
@@ -433,6 +458,154 @@ live_voice() {
   te_close_ours
 }
 
+live_typing() {
+  stage "Learning from my own typing (opt-in): a name backspaced and written again"
+  local lf="$SUP/learned.txt" off
+  if ! te_front; then post typing:off; skp "TextEdit could not be brought to the front, so no keystrokes were sent (they would have gone to another app)"; return; fi
+  post typing:on; sleep 1.5; off=$(loglen)
+  te_new
+  # the same name fixed twice: typed, left to settle, backspaced, written again (a name no other stage uses, so they cannot affect each other)
+  tp "FFTYPE we love Quillmor so much."; sleep 2.5; bk 17; sleep 0.3; tp "Quillmore so much."; sleep 2.5
+  grep -q "Quillmore" "$lf" 2>/dev/null && bad "one fix was already learned" || ok "one fix teaches nothing yet"
+  nl; tp "FFTYPE again Quillmor today."; sleep 2.5; bk 15; sleep 0.3; tp "Quillmore today."; sleep 3
+  if wait_for 12 logsaw "$off" "typing: learned Quillmor -> Quillmore"; then ok "the same fix twice is learned (Quillmor to Quillmore)"; else bad "the fix was not learned"; logsince "$off" | grep typing | tail -3; fi
+  grep -q "Quillmore" "$lf" 2>/dev/null && ok "the spelling is in learned.txt, so the speech engine gets it as a hint" || bad "learned.txt does not hold the spelling"
+  # a typo fixed into an everyday word is not worth keeping
+  nl; tp "FFTYPE teh cat sat today."; sleep 2.5; bk 18; sleep 0.3; tp "the cat sat today."; sleep 2.5
+  nl; tp "FFTYPE teh dog ran today."; sleep 2.5; bk 18; sleep 0.3; tp "the dog ran today."; sleep 3
+  grep -qi "| teh |" "$lf" 2>/dev/null && bad "an ordinary typo was learned" || ok "a typo fixed into an everyday word is ignored"
+  # privacy: no text is kept, only the word
+  { grep -rq "FFTYPE" "$lf" 2>/dev/null || defaults read $DOM 2>/dev/null | grep -q "FFTYPE"; } && bad "typed text was stored" || ok "no typed text is stored anywhere, only the spelling"
+  # switched off, it learns nothing
+  post typing:off; sleep 1
+  nl; tp "FFTYPE we use Zorbitron today."; sleep 2.5; bk 16; sleep 0.3; tp "Zorbitrone today."; sleep 2.5
+  nl; tp "FFTYPE we use Zorbitron again."; sleep 2.5; bk 15; sleep 0.3; tp "Zorbitrone again."; sleep 3
+  grep -q "Zorbitrone" "$lf" 2>/dev/null && bad "it learned while switched off" || ok "switched off, it learns nothing"
+  te_close_ours
+}
+
+live_detail() {
+  stage "Deeper notes (opt-in): the text on the screen, how I type, small pictures, forgetting"
+  local dd="$SUP/workday/detail" today; today=$(date +%F)
+  if ! te_front; then skp "TextEdit could not be brought to the front, so the deeper notes were not tried"; return; fi
+  post detail:forget; sleep 1
+  [ ! -d "$dd" ] && ok "nothing is kept until the switches are on" || bad "detail files exist before anything was switched on"
+  local off; off=$(loglen)
+  post detail:typing:on; post detail:screen:on; sleep 1.5
+  te_new
+  # typed in pieces the way a person types (more than 40 characters in one second counts as a paste, not typing), then left alone
+  tp "Zebra harvest invoice "; sleep 1.3; tp "schedule for the Monday "; sleep 1.3; tp "shipment. Send it to "; sleep 1.3; tp "jamie@example.com please."; sleep 5
+  bk 13; sleep 0.4; tp " right away."; sleep 3
+  post detail:flush; sleep 1.5
+  python3 - "$dd/typing-$today.jsonl" <<'PYEOF' && ok "a typing minute is noted (typed and deleted counts, the finished line, the email already a tag)" || bad "no usable typing record"
+import json, os, sys
+recs = [json.loads(l) for l in open(sys.argv[1]) if l.strip()] if os.path.exists(sys.argv[1]) else []
+r = [x for x in recs if x.get("typed", 0) > 20 and x.get("deleted", 0) > 5]
+assert r, recs
+t = " ".join(x.get("text", "") for x in r)
+assert "jamie@example.com" not in t, t
+assert "<email>" in t, t
+PYEOF
+  grep -rq "jamie@example.com" "$dd" 2>/dev/null && bad "a raw email address reached the notes" || ok "no raw email address anywhere in the deeper notes"
+  # the words on the screen
+  te_front; sleep 1.2; post detail:snap
+  if wait_for 40 sh -c "tail -n +$((off+1)) '$LOG' | grep -qE 'screen: (read [0-9]+ characters|could not|nothing readable|unchanged|not reading|still busy|Screen Recording is not allowed)'"; then
+    if logsince "$off" | grep -q "Screen Recording is not allowed"; then
+      skp "Screen Recording is not allowed for FreeFlow on this Mac, so the screen text could not be tried"
+    elif logsince "$off" | grep -qE "screen: read [0-9]+ characters"; then
+      ok "the window's text is read ($(logsince "$off" | grep -E 'screen: read [0-9]+ characters' | tail -1 | sed 's/.*screen: //'))"
+      local hits try=0
+      while :; do
+        cp "$dd/screen-$today.jsonl" "$WORK/screen-record.jsonl" 2>/dev/null
+        hits=$(tr 'A-Z' 'a-z' < "$dd/screen-$today.jsonl" 2>/dev/null | grep -o -E "zebra|harvest|invoice|schedule|monday|shipment" | sort -u | wc -l | tr -d ' ')
+        [ "${hits:-0}" -ge 3 ] || [ $try -ge 1 ] && break
+        # one retry: the window may have been caught while it was still drawing
+        try=$((try+1)); tp " Again."; sleep 1.5; te_front; post detail:snap; sleep 12
+      done
+      [ "${hits:-0}" -ge 3 ] && ok "the screen record holds the words on the window ($hits of 6 test words found)" || bad "the screen record is missing the window's words ($hits of 6)"
+      [ ! -d "$dd/pictures" ] && ok "no picture is kept unless that switch is on" || bad "a picture was kept without the switch"
+      post detail:pictures:on; tp " Second line about the Tuesday refund and the warehouse."; sleep 2; te_front; post detail:snap
+      wait_for 25 sh -c "ls '$dd/pictures/$today'/*.jpg" && ok "with the pictures switch on, a small picture is kept" || bad "no picture was kept with the switch on"
+      local kb; kb=$(du -k "$dd/pictures/$today"/*.jpg 2>/dev/null | head -1 | cut -f1)
+      [ -n "$kb" ] && [ "$kb" -lt 600 ] && ok "the picture is small (${kb} KB)" || bad "the picture is not small (${kb:-none} KB)"
+      post detail:pictures:off
+    else
+      bad "the screen was not read"; logsince "$off" | grep screen: | tail -3
+    fi
+  else
+    bad "the screen read gave no answer"
+  fi
+  # an agent can read it through the MCP server
+  python3 - <<'PYEOF' && ok "the MCP server hands the notes to an agent (workday_detail)" || bad "workday_detail returned nothing usable"
+import json, subprocess
+def rpc(*msgs):
+    p = subprocess.run(["python3", "scripts/freeflow-mcp.py"], input="\n".join(json.dumps(m) for m in msgs) + "\n", capture_output=True, text=True, timeout=30)
+    return [json.loads(l) for l in p.stdout.splitlines() if l.strip()]
+out = rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "smoke", "version": "1"}}},
+          {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "workday_detail", "arguments": {"kind": "typing"}}})
+res = [o for o in out if o.get("id") == 2][0]["result"]
+body = json.loads(res["content"][0]["text"])
+assert body["typing_notes_are_on"] is True and body["records"], body
+assert all("jamie@example.com" not in json.dumps(r) for r in body["records"])
+PYEOF
+  # switched off, nothing more is written; forgetting removes everything
+  post detail:typing:off; post detail:screen:off; sleep 1
+  local before; before=$(cat "$dd"/*.jsonl 2>/dev/null | wc -c | tr -d ' ')
+  tp " More words typed while the notes are off, ok."; sleep 3; post detail:flush; sleep 1.5; te_front; post detail:snap; sleep 3
+  [ "$(cat "$dd"/*.jsonl 2>/dev/null | wc -c | tr -d ' ')" = "$before" ] && ok "switched off, nothing more is written (typing or screen)" || bad "notes were written while switched off"
+  post detail:forget; sleep 1
+  [ ! -d "$dd" ] && ok "Forget removes the notes and the pictures" || bad "detail files remain after Forget"
+  te_close_ours
+}
+
+live_unsent() {
+  stage "A dictation that did not reach a text box: the card with the words"
+  # the same Accessibility helper the window stage uses (built here too, so this stage can run on its own)
+  if [ -z "${AX:-}" ] || [ ! -x "${AX:-}" ]; then
+    swiftc -O scripts/tools/axclick.swift -o "$WORK/axclick" -framework AppKit -framework ApplicationServices >"$WORK/axbuild.log" 2>&1 && AX="$WORK/axclick" || { bad "could not build the Accessibility helper"; return; }
+  fi
+  type press >/dev/null 2>&1 || press() { "$AX" FreeFlow press "$1" >/dev/null 2>&1; sleep "${2:-0.7}"; }
+  type has >/dev/null 2>&1 || has() { "$AX" FreeFlow list 2>/dev/null | grep -qF -- "$1"; }
+  [ "$SAY_OK" = 1 ] || { skp "speakers not usable, so the spoken part of the card test was skipped"; }
+  local off
+
+  # 1. the card, and Copy
+  off=$(loglen); post unsent:show; sleep 1.5
+  if has "This did not reach a text box"; then ok "the card appears with its title"; else bad "the card did not appear"; fi
+  has "Test: this dictation did not reach a text box." && ok "the card shows the words" || bad "the card does not show the words"
+  has "Paste again" && has "Close" && ok "the card offers Copy, Paste again and Close" || bad "the card is missing a button"
+  printf 'not the words' | pbcopy
+  press Copy 0.5
+  [ "$(pbpaste)" = "Test: this dictation did not reach a text box." ] && ok "Copy puts the words on the clipboard" || bad "Copy did not copy the words ($(pbpaste | cut -c1-40))"
+  sleep 1.8
+  has "This did not reach a text box" && bad "the card did not close after Copy" || ok "the card closes after Copy"
+
+  # 2. Paste again types the words into the box you were in, and the card never took your keyboard focus
+  te_new; post unsent:show; sleep 1.5
+  press "Paste again" 0.8
+  if wait_for 10 te_has "Test: this dictation did not reach a text box"; then ok "Paste again types the words into the box you were in (the card never took the focus)"; else bad "Paste again did not type into TextEdit ($(te_text | cut -c1-50))"; fi
+  has "This did not reach a text box" && bad "the card stayed after Paste again" || ok "the card goes away after Paste again"
+  te_close_ours
+
+  # 3. the real thing: you switch to another app before the words are ready
+  if [ "$SAY_OK" = 1 ]; then
+    te_new; off=$(loglen)
+    post down; sleep 1
+    osascript -e 'tell application "Finder" to activate' >/dev/null 2>&1
+    play dictation; sleep 0.7; post up
+    if wait_for 40 logsaw "$off" "unsent: shown (You switched to"; then ok "dictating, then switching apps, shows the card instead of losing the words"; else bad "no card after switching apps"; logsince "$off" | tail -4; fi
+    wait_for 10 has "Paste again" || true; sleep 0.6      # the card is on screen and readable before it is pressed
+    # the words were copied when the card appeared, so the button already reads "Copied"; pressing it copies them again
+    has "Copied" && ok "the card says the words are already copied" || bad "the card does not say the words are copied"
+    printf 'not the words' | pbcopy
+    if has "Copied"; then press Copied 0.5; else press Copy 0.5; fi
+    pbpaste | grep -qi thursday && ok "the card holds what was said, and Copy copies it ($(pbpaste | tr '\n' ' ' | cut -c1-50))" || bad "the card's words are missing what was said ($(pbpaste | cut -c1-50))"
+    sleep 1.8
+    post unsent:hide
+    te_close_ours
+  fi
+}
+
 live_notes() {
   stage "Meeting notes, summaries and audio files"
   [ "$SAY_OK" = 1 ] || { bad "skipped: speakers not usable"; return; }
@@ -464,12 +637,19 @@ live_workday() {
   stage "Workday: recording, privacy, ideas and a scheduled task"
   press Workday 1.5; see "Workday page" "Keep workday notes"
   see "Workday page explains it keeps no screenshots" "Keep workday notes"
+  see "Workday page offers the deeper notes, switched off by themselves" "Read the text on my screen"
+  see "Workday page offers noting how I type" "Note how I type"
+  see "Workday page offers small pictures as a separate switch" "Keep small pictures of the window too"
+  see "Workday page can forget the deeper notes" "Forget the deeper notes"
+  [ -x "$HOME/.local/bin/fleet-bridge" ] && see "Workday page can ask Hermes for a closer look" "Ask Hermes for a closer look"
 
   # recording, with a window whose title holds an email address, to prove it is cleaned before it is stored
   local f="/private/tmp/ff-smoke-jamie@example.com.txt" today; today=$(date +%F)
+  cliclick m:+1,+0 >/dev/null 2>&1; cliclick m:-1,+0 >/dev/null 2>&1           # a real input event: after 3 minutes without one the notes (rightly) count it as idle
   post workday:on; sleep 1.5
   osascript -e 'tell application "Finder" to activate' >/dev/null 2>&1; sleep 4
   printf 'smoke\n' > "$f"
+  cliclick m:+1,+0 >/dev/null 2>&1; cliclick m:-1,+0 >/dev/null 2>&1
   osascript -e "tell application \"TextEdit\" to open POSIX file \"$f\"" >/dev/null 2>&1; sleep 1; osascript -e 'tell application "TextEdit" to activate' >/dev/null 2>&1; sleep 4
   osascript -e 'tell application "Finder" to activate' >/dev/null 2>&1; sleep 3
   post workday:flush; sleep 1
@@ -522,6 +702,132 @@ PYEOF2
   press Home
 }
 
+live_calls() {
+  stage "Calls: noticed, notes start by themselves, stop when the call ends (the call is simulated, the rest is real)"
+  [ "$SAY_OK" = 1 ] || { skp "speakers not usable, so the call tests were skipped"; return; }
+  defaults write $DOM meetingMode auto; defaults write $DOM meetingCountdown -int 3
+  local off m0; off=$(loglen); m0=$(count_files "$SUP/meetings")
+  post call:zoom
+  if wait_for 25 logsaw "$off" "call detected (Zoom), mode auto"; then ok "a Zoom call is noticed (two checks, about 6 s)"; else bad "the call was not noticed"; logsince "$off" | tail -3; fi
+  # the offer card is on screen during the countdown
+  local id="" i=0
+  while [ $i -lt 20 ] && [ -z "$id" ]; do id=$("$WORK/winsof" FreeFlow 2>/dev/null | awk '$4>330 && $4<460 && $5<400 {print $1; exit}'); [ -n "$id" ] || sleep 0.3; i=$((i+1)); done
+  if [ -n "$id" ] && screencapture -x -o -l "$id" "$WORK/call-card.png" 2>/dev/null && [ "$(stat -f %z "$WORK/call-card.png" 2>/dev/null || echo 0)" -gt 4000 ]; then ok "the offer card is on screen (picture: $WORK/call-card.png)"; else bad "no offer card was found on screen"; fi
+  if wait_for 25 logsaw "$off" "notes started for Zoom"; then ok "notes start by themselves after the countdown"; else bad "the notes did not start"; logsince "$off" | tail -3; fi
+  play meeting
+  post call:none
+  if wait_for 100 logsaw "$off" "notes saved"; then ok "the notes stop by themselves once the call has been over for a minute"; else bad "the notes did not stop after the call ended"; logsince "$off" | tail -4; fi
+  local f; f=$(ls -t "$SUP/meetings" | head -1)
+  [ "$(count_files "$SUP/meetings")" -gt "$m0" ] && grep -q "Zoom" "$SUP/meetings/$f" 2>/dev/null && ok "the note is named for the call (Zoom) and holds the words" || bad "the note is missing or not named for the call"
+
+  # Ask mode: the card waits for you, nothing starts. Off mode: nothing is even offered.
+  defaults write $DOM meetingMode ask; off=$(loglen)
+  post call:zoom; wait_for 25 logsaw "$off" "call detected (Zoom), mode ask" && ok "in Ask mode the call is offered" || bad "Ask mode did not offer the call"
+  sleep 8; logsaw "$off" "notes started" && bad "Ask mode started notes without being asked" || ok "in Ask mode nothing starts until you say so"
+  post call:none; sleep 11
+  defaults write $DOM meetingMode off; off=$(loglen)
+  post call:zoom; sleep 11
+  logsaw "$off" "call detected" && bad "Off mode still noticed a call" || ok "in Off mode a call is not even offered"
+  post call:none; post call:real; defaults write $DOM meetingMode auto
+}
+
+live_mic() {
+  stage "The real microphone watcher"
+  local off; (perl -e 'alarm 14; exec @ARGV' ffmpeg -hide_banner -loglevel error -f avfoundation -i ":default" -t 9 -f null - >/dev/null 2>&1 &)
+  sleep 3
+  # every ffmpeg that is recording from the microphone (a wrapper or an older leftover must not be mistaken for it)
+  local fpids fpid="" p; fpids=$(pgrep -f "ffmpeg.*avfoundation")
+  "$BIN" --probe-meetings >"$WORK/probe-during.log" 2>&1
+  for p in $fpids; do grep -q "^pid $p " "$WORK/probe-during.log" && fpid=$p; done
+  if [ -n "$fpid" ]; then ok "a program recording from the microphone is seen (pid $fpid, not a call)"; else bad "the watcher did not see a program recording from the microphone"; head -4 "$WORK/probe-during.log"; fi
+  sleep 8
+  "$BIN" --probe-meetings >"$WORK/probe-after.log" 2>&1
+  [ -n "$fpid" ] && ! grep -q "^pid $fpid " "$WORK/probe-after.log" && ok "and it is gone from the list when it stops" || bad "the program was still listed after it stopped"
+}
+
+# front_pid PID | front_name NAME: bring that app to the front and verify it, so no keystroke goes to anything else
+front_pid() { local pid=$1 i=0; while [ $i -lt 30 ]; do osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" >/dev/null 2>&1; [ "$(osascript -e 'tell application "System Events" to get unix id of first process whose frontmost is true' 2>/dev/null)" = "$pid" ] && return 0; sleep 0.5; i=$((i+1)); done; return 1; }
+front_name() { local n=$1 i=0; while [ $i -lt 30 ]; do osascript -e "tell application \"$n\" to activate" >/dev/null 2>&1; [ "$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null)" = "$n" ] && return 0; sleep 0.5; i=$((i+1)); done; return 1; }
+
+learn_in() {   # learn_in LABEL chrome|safari  : the app notices a corrected word in a browser text box
+  local label="$1" kind="$2" pid="" attempt=0 done_=0
+  mkdir -p "$WORK/learn"
+  printf '<!doctype html><title>ff-learn-test</title><body style="margin:0"><textarea autofocus rows="15" style="width:95%%;font-size:18px">FFPROBE we love ranklor so much</textarea></body>\n' > "$WORK/learn/learn.html"
+  while [ $attempt -lt 2 ] && [ $done_ = 0 ]; do
+    attempt=$((attempt+1))
+    local front_ok=1
+    if [ "$kind" = chrome ]; then
+      open -na "Google Chrome" --args --user-data-dir="$WORK/learn/profile" --force-renderer-accessibility --no-first-run --no-default-browser-check "file://$WORK/learn/learn.html"
+      wait_for 25 pgrep -f "user-data-dir=$WORK/learn/profile"; pid=$(pgrep -f "user-data-dir=$WORK/learn/profile" | head -1)
+      [ -n "$pid" ] || { bad "$label: the test browser did not start"; return; }
+      sleep 6; front_pid "$pid" || front_ok=0
+    else
+      open -a Safari "file://$WORK/learn/learn.html"; sleep 5
+      front_name Safari || front_ok=0
+    fi
+    sleep 2
+    if [ $front_ok = 0 ]; then
+      # the focus could not be held: nothing was typed anywhere; close the test page and try once more
+      echo "(attempt $attempt: $label could not be brought to the front)" >> "$WORK/learn/$kind.log"
+    else
+      "$BIN" --probe-learn "FFPROBE we love ranklor so much" >"$WORK/learn/$kind.log" 2>&1 &
+      local lp=$! w=0
+      while [ $w -lt 14 ] && ! grep -qE "watching|NOT WATCHING" "$WORK/learn/$kind.log" 2>/dev/null; do sleep 1; w=$((w+1)); done
+      if grep -q "^watching" "$WORK/learn/$kind.log"; then
+        if { [ "$kind" = chrome ] && front_pid "$pid"; } || { [ "$kind" = safari ] && front_name Safari; }; then
+          ok "$label: the watcher finds the typed text in the browser's text box"
+          osascript -e 'tell application "System Events" to keystroke "a" using command down' -e 'delay 0.3' -e 'tell application "System Events" to keystroke "FFPROBE we love Ranklore so much"' >/dev/null 2>&1
+          wait_for 50 sh -c "! kill -0 $lp 2>/dev/null"
+          grep -qi "ranklor -> Ranklore" "$WORK/learn/$kind.log" && ok "$label: the corrected word is learned (ranklor -> Ranklore)" || { bad "$label: nothing was learned"; tail -2 "$WORK/learn/$kind.log"; }
+          done_=1
+        fi
+      fi
+      kill $lp 2>/dev/null
+    fi
+    if [ $done_ = 0 ] && [ $attempt -ge 2 ]; then
+      bad "$label: the watcher could not read the browser's text box after two tries ($(tail -1 "$WORK/learn/$kind.log" | cut -c1-80))"
+    fi
+    if [ "$kind" = chrome ]; then pkill -f "user-data-dir=$WORK/learn/profile" >/dev/null 2>&1
+    else osascript -e 'tell application "Safari"' -e 'repeat with w in windows' -e 'repeat with t in (tabs of w)' -e 'if name of t is "ff-learn-test" then close t' -e 'end repeat' -e 'end repeat' -e 'end tell' >/dev/null 2>&1; fi
+    sleep 1
+  done
+}
+
+live_browsers() {
+  stage "Learning from a correction inside browsers"
+  learn_in "Chrome" chrome
+  if [ -d /Applications/Safari.app ] || [ -d /System/Cryptexes/App/System/Applications/Safari.app ]; then learn_in "Safari" safari; else skp "Safari is not installed"; fi
+}
+
+live_follow_mac() {
+  stage "Match my Mac"
+  defaults write $DOM appearance system
+  relaunch_app
+  post home:home; sleep 2.5
+  if [ "$(defaults read -g AppleInterfaceStyle 2>/dev/null || echo Light)" = Dark ]; then
+    has "| Light colours" && ok "on this dark Mac, Match my Mac is dark purple" || bad "not dark on a dark Mac"
+  else
+    has "| Dark purple" && ok "on this light Mac, Match my Mac is light (the moon button is offered)" || bad "not light on a light Mac"
+    skp "following a DARK Mac cannot be tested here: macOS 26 ignores a per-app dark override and a test must not change your Mac's own appearance. Flip System Settings > Appearance once to see it."
+  fi
+}
+
+stage_release() {
+  stage "The package teammates get"
+  if ./build.sh release >"$WORK/release.log" 2>&1; then ok "build.sh release makes the package"; else bad "build.sh release"; tail -4 "$WORK/release.log"; return; fi
+  local zip; zip=$(ls -t dist/FreeFlow-*.zip 2>/dev/null | head -1)
+  [ -n "$zip" ] && ok "$(basename "$zip") ($(du -h "$zip" | cut -f1))" || { bad "no zip was made"; return; }
+  rm -rf "$WORK/rel"; mkdir -p "$WORK/rel"; unzip -q -o "$zip" -d "$WORK/rel"
+  local d; d="$WORK/rel/$(ls "$WORK/rel" | head -1)"
+  [ -d "$d/FreeFlow.app" ] && [ -x "$d/install.sh" ] && [ -f "$d/README.md" ] && ok "the zip holds the app, install.sh and the README" || bad "the zip is missing a part"
+  codesign --verify --deep --strict "$d/FreeFlow.app" >/dev/null 2>&1 && ok "the unzipped app's signature is intact" || bad "the unzipped app's signature is broken"
+  local n; n=$("$d/FreeFlow.app/Contents/MacOS/FreeFlow" --test 2>&1 | grep -c '^ok')
+  [ "$n" -ge 200 ] && ok "the unzipped copy passes its own $n unit checks" || bad "the unzipped copy's unit checks: $n ok"
+  bash -n "$d/install.sh" && ok "install.sh is valid bash" || bad "install.sh has a syntax error"
+  grep -q "xattr" "$d/install.sh" && ok "install.sh removes the download quarantine flag (the app is not notarised)" || bad "install.sh does not clear the quarantine flag"
+  if spctl --assess --type execute "$d/FreeFlow.app" >/dev/null 2>&1; then ok "macOS Gatekeeper accepts the app as is"; else skp "Gatekeeper rejects the app as downloaded (signed with a development certificate, not notarised): teammates run install.sh"; fi
+}
+
 live_all() {
   stage "Live setup"
   if cmp -s "$BIN" "$APPBIN"; then ok "the installed app is the build under test"; else bad "the installed app differs from build/ (run ./build.sh install)"; fi
@@ -533,22 +839,24 @@ live_all() {
   relaunch_app
   local pid0; pid0=$(pgrep -x FreeFlow | head -1)
   [ -n "$pid0" ] && ok "FreeFlow is running (pid $pid0), speech engine answers" || { bad "FreeFlow did not start"; return; }
+  post gesture:one          # the tests start from one-tap dictation whatever the saved preference is; the preference is restored at the end
   local start; start=$(date +%s)
-  live_ui
-  live_workday
-  live_voice
-  live_notes
+  # ONLY="live_typing live_notes" scripts/smoke.sh live   runs just those stages (the setup above always runs)
+  for st in live_ui live_workday live_voice live_unsent live_typing live_detail live_notes live_calls live_mic live_browsers; do
+    if [ -z "${ONLY:-}" ] || case " $ONLY " in *" $st "*) true ;; *) false ;; esac; then $st; fi
+  done
   local pid1; pid1=$(pgrep -x FreeFlow | head -1)
   [ "$pid0" = "$pid1" ] && ok "the app never restarted or crashed during the run" || bad "the app restarted (pid $pid0 to $pid1)"
+  if [ -z "${ONLY:-}" ] || case " $ONLY " in *" live_ui "*) true ;; *) false ;; esac; then live_follow_mac; fi          # restarts the app on purpose, so it comes after the check above
   if ls -t "$HOME/Library/Logs/DiagnosticReports"/FreeFlow* 2>/dev/null | head -1 | while read f; do [ "$(stat -f %m "$f")" -ge "$start" ] && exit 1; exit 0; done; then ok "no crash report was written"; else bad "a crash report was written during the run"; fi
 }
 
 # ---------------------------------------------------------------- run
 
 case "$MODE" in
-  static) stage_build; stage_units; stage_scripts; stage_voices; stage_system; stage_render ;;
+  static) stage_build; stage_units; stage_scripts; stage_voices; stage_system; stage_render; stage_release ;;
   live)   live_all ;;
-  all)    stage_build; stage_units; stage_scripts; stage_voices; stage_system; stage_render
+  all)    stage_build; stage_units; stage_scripts; stage_voices; stage_system; stage_render; stage_release
           stage "Install"; if ./build.sh install >"$WORK/install.log" 2>&1; then ok "build installed and launched"; else bad "install"; fi
           live_all ;;
   *) echo "usage: scripts/smoke.sh [static|live|all]"; exit 2 ;;

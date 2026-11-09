@@ -448,7 +448,7 @@ if args.contains("--test") {
         check("ideas: a back-and-forth becomes a brief for another agent", ideas.contains { $0.kind == .hermes && $0.text.contains("Google Chrome") && $0.text.contains("Done when") })
         check("ideas: a repeated sentence becomes a phrase to save", ideas.contains { $0.kind == .phrase && $0.text.contains("playbook") && !$0.cue.isEmpty })
         check("ideas: briefs name apps and counts, never window titles", !ideas.filter { $0.kind == .hermes }.contains { $0.text.contains("Search") || $0.text.contains("Sheet") })
-        check("ideas: the same notes give the same ideas with the same ids", Suggestions.list(segments: week, history: hist, cal: utc).map { $0.id } == ideas.map { $0.id })
+        check("ideas: the same notes always give the same ideas in the same order (30 tries)", (0..<30).allSatisfy { _ in Suggestions.list(segments: week, history: hist, cal: utc).map { $0.id } == ideas.map { $0.id } })
 
         // the task that gets written: a script that works, and a schedule file macOS accepts
         let task = ScheduledTask(id: "t1", title: "Open apps", hour: 8, minute: 45, weekdays: [1, 2, 3, 4, 5], apps: ["Google Chrome", "Slack"], why: "test")
@@ -490,6 +490,175 @@ if args.contains("--test") {
         let r = Hermes.send("T", "B")
         Hermes.send = realSend
         check("hermes: the hand-over goes through one replaceable sender", sent.count == 1 && sent[0].0 == "T" && { if case .success("card ok") = r { return true }; return false }())
+    }
+
+    // Learning from your own typing: what counts, what never does, and how the learning is measured.
+    do {
+        let common: (String) -> Bool = { ["the", "love", "much", "quick", "fox", "there", "rank"].contains($0.lowercased()) }
+        let val = "first line\nsecond line here\nthird"
+        let ln = TypingRules.line(in: val, caret: 15)
+        check("typing: the line the caret is on, and where it starts", ln.text == "second line here" && ln.start == 11)
+        // the same strings the live smoke test types, with the Mac's real spell checker (which may already know the name, but only with its capital)
+        check("typing: the smoke test's exact lines give the fix with the real spell checker",
+              TypingRules.pairs(previous: "FFTYPE we love Ranklor so much.", current: "FFTYPE we love Ranklore so much.", isCommon: Learning.isEnglishWord) == [Learning.Pair(wrong: "Ranklor", right: "Ranklore")])
+        check("typing: the live smoke test's own name gives the fix with the real spell checker",
+              TypingRules.pairs(previous: "FFTYPE we love Quillmor so much.", current: "FFTYPE we love Quillmore so much.", isCommon: Learning.isEnglishWord) == [Learning.Pair(wrong: "Quillmor", right: "Quillmore")])
+        check("typing: with the real spell checker an everyday word is still not kept",
+              TypingRules.pairs(previous: "FFTYPE teh cat sat today.", current: "FFTYPE the cat sat today.", isCommon: Learning.isEnglishWord).isEmpty
+              && TypingRules.pairs(previous: "FFTYPE teh cat sat today.", current: "FFTYPE The cat sat today.", isCommon: Learning.isEnglishWord).isEmpty)
+        check("typing: a name known only with its capital counts as a name", TypingRules.pairs(previous: "visit Pariss soon", current: "visit Paris soon", isCommon: { $0 == "Paris" }) == [Learning.Pair(wrong: "Pariss", right: "Paris")])
+        check("typing: a name fixed into an unusual spelling is kept", TypingRules.pairs(previous: "we love Ranklor so much", current: "we love Ranklore so much", isCommon: common) == [Learning.Pair(wrong: "Ranklor", right: "Ranklore")])
+        check("typing: a typo fixed into an everyday word is not kept", TypingRules.pairs(previous: "teh quick fox jumped", current: "the quick fox jumped", isCommon: common).isEmpty)
+        check("typing: added words are not a fix", TypingRules.pairs(previous: "we love", current: "we love Ranklore a lot", isCommon: common).isEmpty)
+        check("typing: a rewrite is not a fix", TypingRules.pairs(previous: "we love Ranklore so much", current: "completely different words arrive now today", isCommon: common).isEmpty)
+        check("typing: numbers and Chinese are never learned this way", TypingRules.pairs(previous: "the model X is here", current: "the model 3000 is here", isCommon: common).isEmpty && TypingRules.pairs(previous: "我喜欢排行", current: "我喜欢排名", isCommon: common).isEmpty)
+        check("typing: password managers, terminals and FreeFlow itself are never looked at", TypingRules.skips(bundle: "com.1password.1password") && TypingRules.skips(bundle: "com.apple.Terminal") && TypingRules.skips(bundle: "com.googlecode.iterm2") && TypingRules.skips(bundle: "com.momominibot.freeflow") && !TypingRules.skips(bundle: "com.apple.TextEdit"))
+
+        var seen = TypingSeen()
+        let p1 = Learning.Pair(wrong: "Ranklor", right: "Ranklore"), p2 = Learning.Pair(wrong: "Zorbitron", right: "Zorbitrone")
+        check("typing: one fix teaches nothing", seen.see([p1]).isEmpty)
+        check("typing: the same fix a second time is kept, once", seen.see([p1]) == [p1] && seen.see([p1]).isEmpty)
+        check("typing: another spelling is counted on its own", seen.see([p2]).isEmpty && seen.counts["zorbitron > Zorbitrone"] == 1)
+
+        // a timeline of looks at one line: only versions that stayed put count
+        var tr = TypingTracker()
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        func look(_ text: String, _ s: Double) -> [Learning.Pair] { tr.observe(text: text, start: 0, sameField: true, at: t0.addingTimeInterval(s), isCommon: common) }
+        var found: [Learning.Pair] = []
+        found += tr.observe(text: "we love Ranklor so much", start: 0, sameField: false, at: t0, isCommon: common)   // first look
+        found += look("we love Ranklor so much", 0.5) + look("we love Ranklor so much", 1.4)          // settled: nothing to compare yet
+        found += look("we love Rank", 2.0) + look("we love ", 2.5) + look("we love Ranklore", 3.0)      // backspacing and retyping: not settled
+        check("typing: a line that is still changing teaches nothing", found.isEmpty)
+        found += look("we love Ranklore so much", 3.5) + look("we love Ranklore so much", 4.4) + look("we love Ranklore so much", 5.0)
+        check("typing: the settled before and after give the fix, once", found == [Learning.Pair(wrong: "Ranklor", right: "Ranklore")])
+        // a pause after deleting the wrong word: the half-deleted line settles too, the fix is still found against the line from before
+        var tp = TypingTracker(); var foundP: [Learning.Pair] = []
+        func lookP(_ t: String, _ sec: Double) { foundP += tp.observe(text: t, start: 0, sameField: true, at: t0.addingTimeInterval(sec), isCommon: common) }
+        lookP("we love Ranklor so much", 0); lookP("we love Ranklor so much", 1.5)          // typed, settled
+        lookP("we love ", 2.0); lookP("we love ", 3.5)                                      // deleted, thought about it for a while
+        lookP("we love Ranklore so much", 4.0); lookP("we love Ranklore so much", 5.5)      // written again, settled
+        check("typing: a pause after deleting the word does not hide the fix", foundP == [Learning.Pair(wrong: "Ranklor", right: "Ranklore")])
+        check("typing: finishing a word you were still typing is not a correction", TypingRules.pairs(previous: "we love Ranklo", current: "we love Ranklore", isCommon: common).isEmpty
+              && !TypingRules.pairs(previous: "we love Ranklor so much", current: "we love Ranklore so much", isCommon: common).isEmpty)
+        check("typing: half-deleted words are never taken as the wrong word", !found.contains { $0.wrong == "Rank" })
+        var tr2 = TypingTracker()
+        _ = tr2.observe(text: "we love Ranklore", start: 0, sameField: false, at: t0, isCommon: common)
+        check("typing: a different line or field starts again", tr2.observe(text: "other text here", start: 40, sameField: true, at: t0.addingTimeInterval(3), isCommon: common).isEmpty)
+
+        // Telling whether a dictation reached a text box
+        check("unsent: text boxes are recognised, and anything settable counts as one",
+              Inserter.classify(role: "AXTextField", settable: false) == .editable && Inserter.classify(role: "AXTextArea", settable: false) == .editable
+              && Inserter.classify(role: "AXGroup", settable: true) == .editable)
+        check("unsent: a list, a button or a scroll area is not a text box",
+              Inserter.classify(role: "AXOutline", settable: false) == .notText("AXOutline") && Inserter.classify(role: "AXButton", settable: false) == .notText("AXButton")
+              && Inserter.classify(role: "AXScrollArea", settable: false) == .notText("AXScrollArea"))
+        check("unsent: a web page or an app that does not describe itself is trusted as before",
+              Inserter.classify(role: "AXWebArea", settable: false) == .unknown && Inserter.classify(role: "", settable: false) == .unknown)
+        check("unsent: a box that changed took the words, one that did not did not, an unreadable one is not judged",
+              Inserter.arrived(before: "hello", after: "hello there") == true && Inserter.arrived(before: "hello", after: "hello") == false
+              && Inserter.arrived(before: nil, after: "x") == nil && Inserter.arrived(before: "x", after: nil) == nil)
+
+        // The talk keys: each has its own key code and its own bit, so one key never answers for another
+        check("talk keys: every key has its own key code and device bit",
+              Set(TalkKey.allCases.map { $0.keyCode }).count == TalkKey.allCases.count && Set(TalkKey.allCases.map { $0.deviceMask }).count == TalkKey.allCases.count
+              && TalkKey.leftControl.keyCode == 59 && TalkKey.leftControl.deviceMask == 0x1 && TalkKey.rightControl.keyCode == 62)
+        check("talk keys: Left Control is in the list with its own names", TalkKey.allCases.contains(.leftControl) && TalkKey.leftControl.short == "left ⌃" && TalkKey.leftControl.chipTitle == "Left Control")
+        do {
+            func flags(_ code: UInt16, _ raw: UInt) -> NSEvent {
+                NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: NSEvent.ModifierFlags(rawValue: raw), timestamp: 0, windowNumber: 0, context: nil,
+                                 characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code)!
+            }
+            let hk = HotkeyMonitor(); hk.key = .leftControl
+            var downs = 0, ups = 0
+            hk.onDown = { downs += 1 }; hk.onUp = { ups += 1 }
+            hk.handle(flags(59, 0x40101))          // left Control goes down
+            hk.handle(flags(59, 0x100))            // and comes up
+            check("talk keys: pressing and releasing Left Control starts and ends a press", downs == 1 && ups == 1)
+            hk.handle(flags(62, 0x42100))          // the right Control key is not the talk key
+            hk.handle(flags(62, 0x100))
+            hk.handle(flags(56, 0x20102))          // neither is Shift
+            check("talk keys: the right Control key and Shift do nothing when Left Control is the talk key", downs == 1 && ups == 1)
+            hk.handle(flags(59, 0x40101)); hk.handle(flags(59, 0x40101))
+            check("talk keys: a repeated flags event while the key stays down is one press", downs == 2)
+        }
+
+        // Double tap of the talk key (as in Wispr Flow)
+        var dt = DoubleTapGate()
+        let g0 = Date(timeIntervalSince1970: 2_000_000)
+        check("double tap: a press with no tap before it is not a second tap", !dt.pressBegan(at: g0) && !dt.waiting)
+        dt.firstTapEnded(at: g0)
+        check("double tap: after a quick tap the gate waits", dt.waiting)
+        check("double tap: a second press soon after is the double tap", dt.pressBegan(at: g0.addingTimeInterval(0.25)))
+        check("double tap: and then the gate is empty again", !dt.waiting && !dt.pressBegan(at: g0.addingTimeInterval(0.3)))
+        dt.firstTapEnded(at: g0)
+        check("double tap: a press after the window is not a second tap", !dt.pressBegan(at: g0.addingTimeInterval(DoubleTapGate.window + 0.1)))
+        dt.firstTapEnded(at: g0); dt.expire()
+        check("double tap: once the window is over (or the recording ended) nothing is waiting", !dt.waiting && !dt.pressBegan(at: g0.addingTimeInterval(0.1)))
+        dt.firstTapEnded(at: g0)
+        check("double tap: a press just inside the window still counts", dt.pressBegan(at: g0.addingTimeInterval(DoubleTapGate.window - 0.01)))
+
+        // Deeper notes: screen text, typing, pictures. What is kept, what never is, and that they can be forgotten.
+        check("detail: emails, links, keys and long numbers become tags",
+              Redact.line("mail jamie@example.com or https://x.io/a?b=1 key sk_live_abcdefgh12345 call 1234 5678 9012") == "mail <email> or <link> key <key> call <number>")
+        check("detail: a line about a password or a code is hidden whole",
+              Redact.line("Password: hunter2") == "<hidden line>" && Redact.line("Your verification code is 482913") == "<hidden line>" && Redact.line("Invoice for March") == "Invoice for March")
+        let rawScreen = "ab\n-----\nInvoice for the March order\nInvoice for the March order\nsend to jamie@example.com\nthe api key is abc\n"
+        check("detail: tiny, symbol and repeated lines are dropped and the rest is cleaned",
+              ScreenText.clean(rawScreen) == "Invoice for the March order\nsend to <email>\n<hidden line>")
+        check("detail: screen text is cut to the limit", ScreenText.clean((0..<400).map { "Line number \($0) of a long page" }.joined(separator: "\n"), limit: 500).count <= 500)
+        let ddir = FileManager.default.temporaryDirectory.appendingPathComponent("ff-detail-test-\(getpid())", isDirectory: true)
+        try? FileManager.default.removeItem(at: ddir)
+        let when = Date()
+        let rs = DetailRecord(t: when, kind: "screen", app: "com.apple.TextEdit", name: "TextEdit", title: "Notes", text: "ZEBRA invoice schedule")
+        let rt = DetailRecord(t: when, kind: "typing", app: "com.apple.TextEdit", name: "TextEdit", title: "Notes", text: "we ship on Monday", typed: 120, deleted: 9, secs: 31)
+        DetailStore.append(rs, in: ddir); DetailStore.append(rt, in: ddir)
+        check("detail: records are written and read back", DetailStore.load(kind: "screen", date: when, in: ddir).map { $0.text } == [rs.text] && DetailStore.load(kind: "typing", date: when, in: ddir).first?.typed == 120)
+        check("detail: a record leaves out what is empty", !(String(data: (try? JSONEncoder().encode(rs)) ?? Data(), encoding: .utf8) ?? "").contains("typed"))
+        let old = Calendar.current.date(byAdding: .day, value: -(DetailStore.keepDays + 3), to: when)!
+        DetailStore.append(DetailRecord(t: old, kind: "screen", app: "x", name: "x", title: "", text: "old words here"), in: ddir)
+        DetailStore.purge(in: ddir)
+        check("detail: notes older than a week are deleted, newer ones stay", DetailStore.load(kind: "screen", date: old, in: ddir).isEmpty && DetailStore.count(kind: "screen", date: when, in: ddir) == 1)
+        let img: CGImage? = {
+            guard let ctx = CGContext(data: nil, width: 40, height: 30, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+            ctx.setFillColor(CGColor(red: 0.4, green: 0.3, blue: 0.7, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: 40, height: 30))
+            return ctx.makeImage()
+        }()
+        let pic = img.flatMap { DetailStore.savePicture($0, app: "Text Edit!", at: when, in: ddir) }
+        check("detail: a picture is a small jpg named for the app", pic.map { $0.pathExtension == "jpg" && $0.lastPathComponent.hasSuffix("-Text-Edit-.jpg") && FileManager.default.fileExists(atPath: $0.path) } == true)
+        let oldPic = DetailStore.picturesDir(in: ddir).appendingPathComponent(DetailStore.dayString(Calendar.current.date(byAdding: .day, value: -(DetailStore.keepPictureDays + 2), to: when)!), isDirectory: true)
+        try? FileManager.default.createDirectory(at: oldPic, withIntermediateDirectories: true)
+        DetailStore.purge(in: ddir)
+        check("detail: pictures older than three days are deleted, today's stay", !FileManager.default.fileExists(atPath: oldPic.path) && pic.map { FileManager.default.fileExists(atPath: $0.path) } == true)
+        let brief = Hermes.deepReviewBrief(days: 7, workday: ddir, detail: ddir, now: when)
+        check("detail: the brief names the files and the rules but holds none of their text",
+              brief.contains("screen-YYYY-MM-DD.jsonl") && brief.contains("typing-YYYY-MM-DD.jsonl") && brief.contains("Do not run, publish, send, buy or change anything outside this Mac")
+              && !brief.contains("ZEBRA") && !brief.contains("we ship on Monday") && brief.contains("screen: 1 records today"))
+        DetailStore.forgetAll(in: ddir)
+        check("detail: forgetting removes the notes and the pictures", !FileManager.default.fileExists(atPath: ddir.path))
+        var meter = TypingMeter()
+        meter.observe(length: 100, sameBox: false)
+        meter.observe(length: 104, sameBox: true); meter.observe(length: 110, sameBox: true); meter.observe(length: 107, sameBox: true)
+        check("detail: typed and deleted characters are counted", meter.typed == 10 && meter.deleted == 3 && meter.seconds == 3)
+        meter.observe(length: 900, sameBox: true); meter.observe(length: 890, sameBox: true)
+        check("detail: a paste or a dictation is not typing", meter.typed == 10 && meter.deleted == 13)
+        meter.observe(length: 5, sameBox: false); meter.observe(length: 5, sameBox: true)
+        check("detail: another text box starts a fresh count and nothing changing counts nothing", meter.typed == 10 && meter.deleted == 13)
+        check("detail: the apps that are never read",
+              Redact.skips(bundle: "com.1password.1password") && TypingRules.skips(bundle: "com.apple.Terminal") && TypingRules.skips(bundle: "com.momominibot.freeflow") && !TypingRules.skips(bundle: "com.apple.Safari"))
+
+        // is it getting better?
+        var tc = Calendar(identifier: .gregorian); tc.timeZone = TimeZone(identifier: "UTC")!
+        let end = tc.date(from: DateComponents(year: 2026, month: 11, day: 15))!
+        let daily14: [(day: Date, words: Int)] = (0..<14).map { (tc.date(byAdding: .day, value: $0 - 13, to: end)!, 100) }
+        var fixes: [String: Int] = [:]
+        for d in 0..<7 { fixes[LearningStats.dayKey(tc.date(byAdding: .day, value: d - 13, to: end)!, tc)] = 2 }       // last week: 14 fixes in 700 words
+        for d in 7..<14 { fixes[LearningStats.dayKey(tc.date(byAdding: .day, value: d - 13, to: end)!, tc)] = 1 }      // this week: 7 fixes in 700 words
+        let wk = LearningStats.weeks(fixesByDay: fixes, daily: daily14, cal: tc)
+        check("stats: fixes and words for this week and the week before", wk.this == LearningStats.Week(fixes: 7, words: 700) && wk.last == LearningStats.Week(fixes: 14, words: 700))
+        check("stats: fewer fixes per 100 words says it is getting more accurate", LearningStats.verdict(this: wk.this, last: wk.last) == "Down from 2.0 to 1.0 fixes per 100 words. It is getting more accurate for you.")
+        check("stats: more fixes is said plainly, not spun", LearningStats.verdict(this: wk.last, last: wk.this).hasPrefix("Up from 1.0 to 2.0"))
+        check("stats: too little dictation gives no verdict", LearningStats.verdict(this: LearningStats.Week(fixes: 1, words: 40), last: wk.last).hasPrefix("Not enough"))
+        check("stats: no week to compare with is said so", LearningStats.verdict(this: wk.this, last: LearningStats.Week(fixes: 0, words: 0)).contains("something to compare"))
     }
 
     // The AI tidy-up never holds typed words for long: a short budget that grows with the length, capped.
@@ -608,5 +777,5 @@ if let i = args.firstIndex(of: "--render-ui"), i + 1 < args.count {
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
-app.setActivationPolicy(.accessory)
+app.setActivationPolicy(Settings.shared.showInDock ? .regular : .accessory)
 app.run()

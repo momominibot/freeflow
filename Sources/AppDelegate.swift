@@ -34,6 +34,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         })
     private let summarizer = NoteSummarizer()
     private let workday = WorkdayRecorder()
+    private let detail = DetailRecorder()
+    private let unsent = UnsentCard()
+    private let typing = TypingLearner()
     private lazy var files = FileTranscriber(
         transcribe: { [weak self] url, done in self?.transcribeForNotes(url, done) ?? done(.failure(FFError(message: "FreeFlow is closing"))) },
         cleanup: { raw in TextCleaner.clean(raw, removeFillers: false, vocab: Personalization.load().vocab, quiet: false) })
@@ -45,6 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var recordStart = Date()
     private var frontApp: String?
     private var consumeNextUp = false
+    private var doubleTap = DoubleTapGate()
+    private var secondTapItem: DispatchWorkItem?
+    private var finishGate = DoubleTapGate()
+    private var finishPressAt = Date.distantPast
     private var maxLengthItem: DispatchWorkItem?
     private var warnItem: DispatchWorkItem?
 
@@ -71,6 +78,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let tapThreshold: TimeInterval = 0.3
     private static let maxLength: TimeInterval = 20 * 60
 
+    /// Clicking the Dock icon, or opening FreeFlow from Spotlight or Launchpad while it is running, shows its window.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        openStudio(nil)
+        return true
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let id = Bundle.main.bundleIdentifier,
            NSRunningApplication.runningApplications(withBundleIdentifier: id).count > 1 {
@@ -81,6 +94,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         AppearanceChoice.applySaved()
         workday.log = { [weak self] m in self?.log(m) }
         if settings.workdayOn { workday.start() }
+        detail.log = { [weak self] m in self?.log(m) }
+        detail.apply()
+        unsent.log = { [weak self] m in self?.log(m) }
+        typing.log = { [weak self] m in self?.log(m) }
+        typing.onLearned = { [weak self] pairs in
+            if let p = pairs.first { self?.overlay.flash("Learned: \(p.wrong) \u{2192} \(p.right)", seconds: 2.5) }
+        }
+        if settings.learnFromTyping { typing.start() }
         _ = Personalization.load()
         installMainMenu()
         wireBridge()
@@ -140,7 +161,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Test hooks, only when the debugTriggers setting is on: down, up, tap, command, lock, paste, home:<page>, settings:<tab>,
-    /// pill:<state>, meeting:start, meeting:stop, transform:<id>, file:<path>, summary:<note>.
+    /// pill:<state>, meeting:start, meeting:stop, call:zoom, call:none, call:real, workday:on, workday:off, workday:flush,
+    /// transform:<id>, file:<path>, summary:<note>.
     @objc private func handleDebug(_ note: Notification) {
         guard settings.debugTriggers else { return }
         switch note.object as? String {
@@ -151,10 +173,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // A real quick tap of the talk key: down, then up 0.1 s later. The first starts hands-free, the next one finishes.
             self.talkDown(.dictate)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.talkUp() }
+        case "tap:double":
+            // Two quick taps 0.3 s apart, as a real double tap of the talk key would be.
+            self.talkDown(.dictate)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.talkUp() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.talkDown(.dictate) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.talkUp() }
         case "lock": self.lockHandsFree()
+        case "call:zoom": self.meetings.detect = { ("Zoom", "us.zoom.xos") }     // pretend a Zoom call is on, to test the rules
+        case "call:none": self.meetings.detect = { nil }
+        case "call:real": self.meetings.detect = { MicWatch.currentCall() }
+        case "typing:on": self.settings.learnFromTyping = true; self.typing.start()
+        case "typing:off": self.settings.learnFromTyping = false; self.typing.stop()
+        case "typing:probe": self.log(self.typing.probe())
+        case "unsent:show": self.unsent.show(text: "Test: this dictation did not reach a text box.", reason: "Shown by the check on this Mac.", onPasteAgain: { Inserter.paste($0) })
+        case "unsent:hide": self.unsent.hide()
+        case "gesture:double": self.settings.doubleTapToStart = true; self.doubleTap.expire()
+        case "gesture:one": self.settings.doubleTapToStart = false; self.doubleTap.expire()
         case "workday:on": self.settings.workdayOn = true; self.workday.start()
         case "workday:off": self.settings.workdayOn = false; self.workday.stop()
         case "workday:flush": self.workday.flush()
+        case "detail:screen:on": self.settings.screenTextOn = true; self.detail.apply()
+        case "detail:screen:off": self.settings.screenTextOn = false; self.detail.apply()
+        case "detail:typing:on": self.settings.typingDetailOn = true; self.detail.apply()
+        case "detail:typing:off": self.settings.typingDetailOn = false; self.detail.apply()
+        case "detail:pictures:on": self.settings.keepPictures = true
+        case "detail:pictures:off": self.settings.keepPictures = false
+        case "detail:snap": self.detail.readNow(force: true)
+        case "detail:flush": self.detail.flush()
+        case "detail:forget": DetailStore.forgetAll(); self.log("detail: everything forgotten")
         case "meeting:start": self.meetings.startNow()
         case "meeting:stop": self.meetings.stop()
         case "paste":
@@ -184,6 +231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         if workday.running { workday.stop() }
+        detail.stopTyping()
         server.stop()
     }
 
@@ -200,10 +248,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Talk key
 
     private func talkDown(_ m: Mode) {
+        if settings.doubleTapToStart { log("talk key: pressed (recording \(isRecording), waiting for a second tap \(doubleTap.waiting), hands-free \(handsFree))") }
         if isRecording, handsFree {
+            finishPressAt = Date()
+            if settings.doubleTapToStart {
+                // Listening hands-free: finishing takes two quick taps as well, so one stray press cannot end the dictation.
+                if finishGate.pressBegan(at: Date()) {
+                    consumeNextUp = true
+                    log("talk key: double tap, finishing")
+                    finishRecording()
+                }
+                return
+            }
             consumeNextUp = true
             finishRecording()
             return
+        }
+        if isRecording, doubleTap.waiting, m == .dictate {
+            // The second press of a double tap, while the first quick tap's recording is still open: carry on with it, hands-free.
+            secondTapItem?.cancel()
+            if doubleTap.pressBegan(at: Date()) {
+                handsFree = true
+                consumeNextUp = true
+                log("talk key: double tap, hands-free is on")
+                finishGate.expire()
+                overlay.showRecording(hint: "Listening · \(settings.finishPhrase(activeKey)) to finish")
+                play("Tink")
+                refreshIcon()
+                return
+            }
+            cancelRecording()       // too late to be the second tap: that recording is over; this press starts a new one
         }
         guard !isRecording else { return }
         startRecording(m, handsFree: false)
@@ -216,20 +290,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard isRecording, !handsFree else { return }
         handsFree = true
         consumeNextUp = true
-        overlay.setHint("Hands-free · tap \(activeKey.short) to finish")
+        finishGate.expire()
+        overlay.setHint("Hands-free · \(settings.finishPhrase(activeKey)) to finish")
         play("Tink")
     }
 
     private var activeKey: TalkKey { mode == .command ? settings.commandKey : settings.talkKey }
 
     private func talkUp() {
+        if settings.doubleTapToStart { log(String(format: "talk key: released after %.2f s", Date().timeIntervalSince(recordStart))) }
         if consumeNextUp {
             consumeNextUp = false
+            return
+        }
+        if isRecording, handsFree, settings.doubleTapToStart {
+            // Listening hands-free: a quick tap is the first of the two that finish; a long press (more than half a second) also
+            // finishes, so you can never be stuck; anything in between does nothing.
+            let held = Date().timeIntervalSince(finishPressAt)
+            if held >= 0.6 {
+                log("talk key: held while listening, finishing")
+                finishRecording()
+            } else if held < Self.tapThreshold {
+                finishGate.firstTapEnded(at: Date())
+                log("talk key: one quick tap while listening, tap again to finish")
+            }
             return
         }
         guard isRecording, !handsFree else { return }
         if Date().timeIntervalSince(recordStart) < Self.tapThreshold {
             if settings.tapToToggle, mode == .dictate {
+                if settings.doubleTapToStart {
+                    // The first of two taps: nothing is typed and no pill is shown. The recording stays open for a moment so a
+                    // second press can carry on with it; if none comes, it is dropped.
+                    doubleTap.firstTapEnded(at: Date())
+                    log("talk key: one quick tap, waiting for a second (double-tap mode)")
+                    let started = recordStart
+                    let item = DispatchWorkItem { [weak self] in
+                        guard let self = self, self.doubleTap.waiting, self.isRecording, self.recordStart == started else { return }
+                        self.doubleTap.expire()
+                        self.cancelRecording()
+                    }
+                    secondTapItem = item
+                    DispatchQueue.main.asyncAfter(deadline: .now() + DoubleTapGate.window + 0.05, execute: item)
+                    return
+                }
                 // Quick tap: keep listening until the key is tapped again.
                 handsFree = true
                 overlay.showRecording(hint: "Listening · tap \(activeKey.short) again to finish")
@@ -239,6 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             cancelRecording()
             return
         }
+        doubleTap.expire()
         finishRecording()
     }
 
@@ -274,6 +379,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         guard recorder.start() else {
+            log("talk key: the microphone did not start")
             if recorder.lastStartTimedOut {
                 log("microphone did not answer within \(Recorder.openTimeout)s: macOS audio looks stuck")
                 overlay.flash("The microphone isn't answering. macOS audio is stuck: restart the Mac, or run  sudo killall coreaudiod", seconds: 7)
@@ -291,9 +397,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if m == .command {
             hint = "Command · say what to do with the selected text"
         } else {
-            hint = handsFree ? "Hands-free · tap \(settings.talkKey.short) to finish" : ""
+            hint = handsFree ? "Hands-free · \(settings.finishPhrase(settings.talkKey)) to finish" : ""
         }
-        overlay.showRecording(hint: hint)
+        if settings.doubleTapToStart, settings.tapToToggle, m == .dictate, !handsFree {
+            let started = recordStart
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.tapThreshold) { [weak self] in
+                guard let self = self, self.isRecording, self.recordStart == started else { return }
+                self.overlay.showRecording(hint: hint)
+            }
+        } else {
+            overlay.showRecording(hint: hint)
+        }
         refreshIcon()
 
         if handsFree || m == .command {
@@ -323,6 +437,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard isRecording else { return }
         isRecording = false
         handsFree = false
+        doubleTap.expire()
+        finishGate.expire()
+        secondTapItem?.cancel()
         maxLengthItem?.cancel()
         warnItem?.cancel()
         recorder.cancel()
@@ -334,6 +451,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard isRecording else { return }
         isRecording = false
         handsFree = false
+        doubleTap.expire()
+        finishGate.expire()
+        secondTapItem?.cancel()
         maxLengthItem?.cancel()
         warnItem?.cancel()
         play("Pop")
@@ -504,6 +624,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard AXIsProcessTrusted() else {
             Inserter.copy(o.text)
             overlay.flash("Copied · press ⌘V to paste (allow Accessibility to type automatically)", seconds: 3)
+            showUnsent(o, reason: "FreeFlow is not allowed to type into apps yet (System Settings › Privacy & Security › Accessibility). The words are copied: press ⌘V where you want them.", copied: true)
             return completion()
         }
         // The result belongs to the app you were in when you spoke. If you have since switched, do not type into the wrong window.
@@ -511,15 +632,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let app = o.app, let front = front, app != front, front != Bundle.main.bundleIdentifier {
             Inserter.copy(o.text)
             overlay.flash("You switched to \(appName(front)) · result copied, press ⌘V where you want it", seconds: 4)
+            showUnsent(o, reason: "You switched to \(appName(front)) before it was ready. The words are copied: press ⌘V where you want them.", copied: true)
+            return completion()
+        }
+        // Is there anywhere to type? A list, a button or the desktop in focus is not a text box: say so instead of pasting into nothing.
+        let seen = Inserter.look()
+        if case .notText = seen.landing {
+            showUnsent(o, reason: "Nothing in \(appName(front ?? "")) was ready for typing. Click into a text box, then Paste again.", copied: false)
             return completion()
         }
         // A command replaces the selection, so no leading space; a dictation continues the sentence.
         let text = o.mode == "command" ? o.text : (Inserter.needsLeadingSpace() ? " " + o.text : o.text)
         Inserter.paste(text) {
-            // Look at the box before Return can clear it, so a fixed word can be learned.
-            if o.mode != "command" { self.corrections.begin(pasted: text) }
-            if o.pressEnter { Inserter.pressReturn() }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: completion)
+            let landed = { (arrived: Bool) in
+                guard arrived else {
+                    self.showUnsent(o, reason: "Nothing arrived in \(self.appName(front ?? "")): the box did not take the paste. Click into it, then Paste again.", copied: false)
+                    return completion()
+                }
+                // Look at the box before Return can clear it, so a fixed word can be learned.
+                if o.mode != "command" { self.corrections.begin(pasted: text) }
+                if o.pressEnter { Inserter.pressReturn() }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: completion)
+            }
+            // Where the box can be read, check the words really went in (twice, half a second apart); elsewhere, trust the paste.
+            if seen.landing == .editable, let el = seen.element, let before = seen.before {
+                Inserter.confirmArrival(element: el, before: before, completion: landed)
+            } else {
+                landed(true)
+            }
+        }
+    }
+
+    /// The card with the words, when they did not reach a text box. The words are in the history either way.
+    private func showUnsent(_ o: Outcome, reason: String, copied: Bool) {
+        guard settings.unsentPopup else {
+            if !copied { Inserter.copy(o.text); overlay.flash("Not typed · copied, press ⌘V where you want it", seconds: 4) }
+            return
+        }
+        unsent.show(text: o.text, reason: reason, alreadyCopied: copied) { text in
+            Inserter.paste(text)
         }
     }
 
@@ -549,7 +700,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             timer.invalidate()
             self.installHotkeys()
             self.refreshIcon()
-            self.overlay.flash("FreeFlow is ready · tap \(self.settings.talkKey.short), talk, tap again", seconds: 3)
+            self.overlay.flash("FreeFlow is ready · \(self.settings.startPhrase), talk, \(self.settings.doubleTapToStart ? "double-tap" : "tap") again", seconds: 3)
         }
     }
 
@@ -618,11 +769,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ai.refreshAvailability()
         let st = statusLine()
         menu.addItem(info(st.ok ? "Ready · \(settings.engine.short) · runs offline" : "⚠︎ \(st.text)"))
-        menu.addItem(info("Tap \(settings.talkKey.short) to start, tap again to finish"))
+        menu.addItem(info("\(settings.startPhrase.prefix(1).uppercased() + settings.startPhrase.dropFirst()) to start, \(settings.doubleTapToStart ? "double-tap" : "tap") again to finish"))
         menu.addItem(.separator())
 
         menu.addItem(item("Open FreeFlow", #selector(openHome), symbol: "house"))
         if workday.running { menu.addItem(info("Workday notes are on (Workday page to switch off)")) }
+        if detail.screenRunning { menu.addItem(info("Reading the text on my screen is on (Workday page)")) }
+        if detail.typingRunning { menu.addItem(info("Noting how I type is on (Workday page)")) }
+        if typing.running { menu.addItem(info("Learning from my typing is on (Settings > Data and Privacy)")) }
         if let now = meetings.now {
             menu.addItem(item("Stop meeting notes · \(now.app) \(MeetingFile.stamp(now.seconds))", #selector(stopMeetingNotes), symbol: "stop.circle"))
         } else {
@@ -770,9 +924,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Lets the window change settings and ask for things without knowing how the app works inside.
     private func wireBridge() {
+        bridge.typingChanged = { [weak self] in
+            guard let self = self else { return }
+            if self.settings.learnFromTyping { self.typing.start() } else { self.typing.stop() }
+        }
         bridge.workdayChanged = { [weak self] in
             guard let self = self else { return }
             if self.settings.workdayOn { self.workday.start() } else { self.workday.stop() }
+        }
+        bridge.detailChanged = { [weak self] in self?.detail.apply() }
+        bridge.dockChanged = { [weak self] in
+            guard let self = self else { return }
+            // A Dock icon while the window is open, or all the time when asked for.
+            NSApp.setActivationPolicy(self.settings.showInDock || NSApp.windows.contains { $0.isVisible && $0.canBecomeMain } ? .regular : .accessory)
         }
         bridge.hotkeysChanged = { [weak self] in self?.installHotkeys() }
         bridge.engineChosen = { [weak self] e in self?.chooseEngine(e) }

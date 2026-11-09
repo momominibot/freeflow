@@ -65,12 +65,13 @@ enum AppearanceChoice: String, CaseIterable {
 }
 
 enum TalkKey: String, CaseIterable {
-    case rightOption, fn, rightCommand, rightControl
+    case rightOption, fn, leftControl, rightCommand, rightControl
 
     var title: String {
         switch self {
         case .rightOption: return "Right Option (⌥)"
         case .fn: return "Fn / Globe"
+        case .leftControl: return "Left Control (⌃)"
         case .rightCommand: return "Right Command (⌘)"
         case .rightControl: return "Right Control (⌃)"
         }
@@ -80,6 +81,7 @@ enum TalkKey: String, CaseIterable {
         switch self {
         case .rightOption: return "right ⌥"
         case .fn: return "Fn"
+        case .leftControl: return "left ⌃"
         case .rightCommand: return "right ⌘"
         case .rightControl: return "right ⌃"
         }
@@ -89,6 +91,7 @@ enum TalkKey: String, CaseIterable {
         switch self {
         case .rightOption: return 61
         case .fn: return 63
+        case .leftControl: return 59
         case .rightCommand: return 54
         case .rightControl: return 62
         }
@@ -99,6 +102,7 @@ enum TalkKey: String, CaseIterable {
         switch self {
         case .rightOption: return 0x40
         case .fn: return 0x800000
+        case .leftControl: return 0x1
         case .rightCommand: return 0x10
         case .rightControl: return 0x2000
         }
@@ -146,6 +150,25 @@ final class Settings {
         set { d.set(newValue, forKey: "workdayInterval") }
     }
 
+    /// Deeper workday notes, each off until switched on (see Detail.swift): the words on the front window, how you type, small pictures.
+    var screenTextOn: Bool {
+        get { d.bool(forKey: "screenTextOn") }
+        set { d.set(newValue, forKey: "screenTextOn") }
+    }
+    var typingDetailOn: Bool {
+        get { d.bool(forKey: "typingDetailOn") }
+        set { d.set(newValue, forKey: "typingDetailOn") }
+    }
+    var keepPictures: Bool {
+        get { d.bool(forKey: "keepPictures") }
+        set { d.set(newValue, forKey: "keepPictures") }
+    }
+    /// Seconds between reads of the front window's text (2 minutes by default).
+    var detailInterval: TimeInterval {
+        get { let v = d.double(forKey: "detailInterval"); return v >= 1 ? min(v, 900) : 120 }
+        set { d.set(newValue, forKey: "detailInterval") }
+    }
+
     var appearance: AppearanceChoice {
         get { AppearanceChoice(rawValue: d.string(forKey: "appearance") ?? "") ?? .system }
         set { d.set(newValue.rawValue, forKey: "appearance") }
@@ -162,6 +185,30 @@ final class Settings {
         set { d.set(newValue, forKey: "tapToToggle") }
     }
 
+    /// A Dock icon all the time, not only while the window is open. Off by default (FreeFlow lives in the menu bar).
+    var showInDock: Bool {
+        get { d.bool(forKey: "showInDock") }
+        set { d.set(newValue, forKey: "showInDock") }
+    }
+
+    /// Start hands-free with two quick taps of the talk key instead of one (so a single accidental press does nothing).
+    var doubleTapToStart: Bool {
+        get { d.bool(forKey: "doubleTapToStart") }
+        set { d.set(newValue, forKey: "doubleTapToStart") }
+    }
+
+    /// When a dictation cannot be typed into a text box, show a card with the words and a Copy button. On unless switched off.
+    var unsentPopup: Bool {
+        get { d.object(forKey: "unsentPopup") as? Bool ?? true }
+        set { d.set(newValue, forKey: "unsentPopup") }
+    }
+
+    /// How to start, in words: "tap Fn" or "double-tap Fn".
+    var startPhrase: String { doubleTapToStart ? "double-tap \(talkKey.short)" : "tap \(talkKey.short)" }
+
+    /// How to finish a hands-free dictation: in double-tap mode it takes two quick taps too, so one stray press cannot end it.
+    func finishPhrase(_ key: TalkKey) -> String { doubleTapToStart ? "double-tap \(key.short)" : "tap \(key.short)" }
+
     var engine: SpeechEngine {
         get { SpeechEngine(rawValue: d.string(forKey: "engine") ?? "") ?? .whisper }
         set { d.set(newValue.rawValue, forKey: "engine") }
@@ -174,6 +221,29 @@ final class Settings {
     }
 
     /// Learn words from the corrections you make to text FreeFlow typed. On by default; the pairs stay in learned.txt.
+    /// Learn from fixes made in your own typing, not only in text FreeFlow typed. Off until you switch it on.
+    var learnFromTyping: Bool {
+        get { d.bool(forKey: "learnFromTyping") }
+        set { d.set(newValue, forKey: "learnFromTyping") }
+    }
+
+    /// Fixes seen once so far (the same fix must be seen twice before it is kept): a spelling and how many times.
+    var typingSeenRaw: [String: Any] {
+        get { d.dictionary(forKey: "typingSeen") ?? [:] }
+        set { d.set(newValue, forKey: "typingSeen") }
+    }
+
+    /// How many fixes were learned each day, to show whether you need fewer over time.
+    var fixesByDay: [String: Int] { Settings.counts(d.dictionary(forKey: "fixesByDay") ?? [:]) }
+    func addFixes(_ n: Int) {
+        guard n > 0 else { return }
+        var m = fixesByDay
+        m[Self.today, default: 0] += n
+        // keep about two months
+        if m.count > 70 { for k in m.keys.sorted().prefix(m.count - 70) { m[k] = nil } }
+        d.set(m, forKey: "fixesByDay")
+    }
+
     var learnFromFixes: Bool {
         get { d.object(forKey: "learnFromFixes") as? Bool ?? true }
         set { d.set(newValue, forKey: "learnFromFixes") }

@@ -158,6 +158,41 @@ def t_workday_summary(days=1):
     return out
 
 
+def t_workday_detail(kind="both", days=1, max_chars=20000):
+    """The deeper workday notes: text read from the front window and how the user types. Cleaned already (emails, links, keys,
+    long numbers and password lines are tags). Only exists if the user switched those parts on."""
+    days = max(1, min(int(days), 7))
+    max_chars = max(1000, min(int(max_chars), 100000))
+    kinds = ["screen", "typing"] if kind == "both" else [kind]
+    if any(k not in ("screen", "typing") for k in kinds):
+        raise ValueError("kind is screen, typing or both")
+    folder = os.path.join(SUPPORT, "workday", "detail")
+    p = prefs()
+    out = {"screen_text_is_on": bool(p.get("screenTextOn", False)), "typing_notes_are_on": bool(p.get("typingDetailOn", False)), "records": [], "truncated": False}
+    if not os.path.isdir(folder):
+        return out
+    cutoff = (datetime.now() - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    used = 0
+    for name in sorted(os.listdir(folder), key=lambda n: n[-16:]):
+        if not name.endswith(".jsonl") or name[-16:-6] < cutoff or name.split("-")[0] not in kinds:
+            continue
+        for line in read(os.path.join(folder, name)).splitlines():
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            rec = {"time": datetime.fromtimestamp(r["t"]).strftime("%Y-%m-%d %H:%M"), "kind": r.get("kind"), "app": r.get("name") or r.get("app"),
+                   "title": r.get("title", ""), "text": r.get("text", "")}
+            if r.get("kind") == "typing":
+                rec.update({"typed": r.get("typed", 0), "deleted": r.get("deleted", 0), "seconds": r.get("secs", 0)})
+            used += len(rec["text"]) + 80
+            if used > max_chars:
+                out["truncated"] = True
+                return out
+            out["records"].append(rec)
+    return out
+
+
 def t_add_dictionary_word(word, correction=None, team=False):
     word = (word or "").strip()
     if not word:
@@ -207,6 +242,7 @@ TOOLS = [
     ("get_snippets", "Personal and team snippets: spoken cue => expansion.", {"type": "object", "properties": {}}, t_get_snippets, False),
     ("get_usage", "Word counts today and all time, top apps, current settings.", {"type": "object", "properties": {}}, t_get_usage, False),
     ("workday_summary", "Minutes per app for the last N days (1 to 14) from the user's workday notes, to spot routines worth automating. Only if the user switched the notes on. App names only, never window titles.", {"type": "object", "properties": {"days": {"type": "integer", "minimum": 1, "maximum": 14}}}, t_workday_summary, False),
+    ("workday_detail", "The deeper workday notes (text read from the user's front window, and how they type: characters typed and deleted per minute plus lines they finished), already cleaned of emails, links, keys and numbers. Only if the user switched those parts on. Use it to find routines worth automating; do not copy it elsewhere.", {"type": "object", "properties": {"kind": {"type": "string", "enum": ["screen", "typing", "both"]}, "days": {"type": "integer", "minimum": 1, "maximum": 7}, "max_chars": {"type": "integer", "minimum": 1000, "maximum": 100000}}}, t_workday_detail, False),
     ("add_dictionary_word", "Teach FreeFlow a word, optionally with the misspelling it should replace. Set team=true to add it to the shared team dictionary.",
      {"type": "object", "properties": {"word": {"type": "string"}, "correction": {"type": "string", "description": "if given, 'word' is the wrong spelling and this is the right one"}, "team": {"type": "boolean", "default": False}}, "required": ["word"]},
      t_add_dictionary_word, True),

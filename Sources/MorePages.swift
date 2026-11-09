@@ -214,7 +214,7 @@ struct HelpPage: View {
             }
 
             SettingsCard(title: "Quick start") {
-                tip(KeyCap(text: s.talkKey.short), "Tap, say anything, tap again. Or hold it while you talk.")
+                tip(KeyCap(text: s.talkKey.short), (s.doubleTapToStart ? "Double-tap, say anything, double-tap to finish. Or hold it while you talk." : "Tap, say anything, tap again. Or hold it while you talk."))
                 tip(KeyCap(text: s.commandKey.short), "Hold it with text selected and say what to change: \u{201C}make this shorter\u{201D}.")
                 tip(Image(systemName: "note.text").foregroundColor(RT.mauve), "Say \u{201C}note to self\u{201D} first and it goes to your Jots.")
                 tip(Image(systemName: "record.circle").foregroundColor(RT.mauve), "Start a call and FreeFlow offers to write it down. Notes are in Meetings.")

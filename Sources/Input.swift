@@ -2,6 +2,29 @@ import AppKit
 import AVFoundation
 import ApplicationServices
 
+/// Two quick taps of the talk key in a row (a double tap, as in Wispr Flow) start hands-free dictation, so one accidental press of
+/// a key like Fn does nothing. The first quick tap leaves the recording open for a short window; a press that begins inside the
+/// window is the second tap and simply carries on with the same recording (nothing is stopped and restarted).
+struct DoubleTapGate {
+    /// Longest gap from the end of the first quick tap to the start of the second press.
+    static let window: TimeInterval = 0.45
+    private(set) var waiting = false
+    private var firstEnded: Date?
+
+    /// A press ended quickly: it may be the first of two.
+    mutating func firstTapEnded(at now: Date) { waiting = true; firstEnded = now }
+
+    /// A press began. True when it is the second press of a double tap.
+    mutating func pressBegan(at now: Date) -> Bool {
+        defer { waiting = false; firstEnded = nil }
+        guard waiting, let f = firstEnded else { return false }
+        return now.timeIntervalSince(f) <= Self.window
+    }
+
+    /// The window ran out, or the recording ended some other way.
+    mutating func expire() { waiting = false; firstEnded = nil }
+}
+
 /// Watches one held key. Needs Accessibility permission to see keys pressed in other apps.
 final class HotkeyMonitor {
     var key: TalkKey = .rightOption { didSet { isDown = false } }
@@ -30,7 +53,7 @@ final class HotkeyMonitor {
         monitors = []
     }
 
-    private func handle(_ e: NSEvent) {
+    func handle(_ e: NSEvent) {
         if e.type == .keyDown { onKeyDown?(e.keyCode); return }
         if isDown, e.keyCode == 56 || e.keyCode == 60, e.modifierFlags.contains(.shift) {
             onLock?()
@@ -296,7 +319,7 @@ enum Inserter {
 
     /// The text box with the cursor. Asks the whole system first; when that says "cannot complete" (it does for some
     /// processes), asks the app in front directly, which answers the same question.
-    private static func focusedElement() -> AXUIElement? {
+    static func focusedElement() -> AXUIElement? {
         func focus(of root: AXUIElement) -> AXUIElement? {
             AXUIElementSetMessagingTimeout(root, 0.15)
             var focused: CFTypeRef?
@@ -311,7 +334,7 @@ enum Inserter {
         return focus(of: AXUIElementCreateApplication(app.processIdentifier))
     }
 
-    private static func isSettable(_ el: AXUIElement) -> Bool {
+    static func isSettable(_ el: AXUIElement) -> Bool {
         var settable = DarwinBoolean(false)
         return AXUIElementIsAttributeSettable(el, kAXValueAttribute as CFString, &settable) == .success && settable.boolValue
     }

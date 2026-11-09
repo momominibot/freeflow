@@ -140,9 +140,9 @@ struct HomePage: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(name.isEmpty ? "Welcome back" : "Welcome back, \(name)").font(Fonts.serif(36)).foregroundColor(RT.plum)
                 HStack(spacing: 8) {
-                    Text("Tap").font(Fonts.sans(14.5, .medium)).foregroundColor(RT.ink2)
+                    Text(model.settings.doubleTapToStart ? "Double-tap" : "Tap").font(Fonts.sans(14.5, .medium)).foregroundColor(RT.ink2)
                     KeyCap(text: key.short)
-                    Text("to start, tap again to finish. Or hold it and talk.").font(Fonts.sans(14.5, .medium)).foregroundColor(RT.ink2)
+                    Text(model.settings.doubleTapToStart ? "to start, double-tap again to finish. Or hold it and talk." : "to start, tap again to finish. Or hold it and talk.").font(Fonts.sans(14.5, .medium)).foregroundColor(RT.ink2)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -240,7 +240,7 @@ struct HomePage: View {
             Text("Try it now").font(Fonts.serif(22)).foregroundColor(RT.plum)
             HStack(spacing: 8) {
                 KeyCap(text: key.short)
-                Text("tap it, say anything, tap it again.").font(Fonts.sans(14, .medium)).foregroundColor(RT.ink2)
+                Text(model.settings.doubleTapToStart ? "double-tap it, say anything, double-tap it to finish." : "tap it, say anything, tap it again.").font(Fonts.sans(14, .medium)).foregroundColor(RT.ink2)
             }
             HStack(spacing: 8) {
                 KeyCap(text: model.settings.commandKey.short)

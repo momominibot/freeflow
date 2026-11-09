@@ -207,6 +207,7 @@ enum Learning {
         var f = LearnedFile.load()
         f.record(pairs, weight: weight, today: Settings.today)
         f.save()
+        Settings.shared.addFixes(pairs.count)
         return pairs
     }
 
@@ -371,7 +372,7 @@ final class CorrectionWatcher {
     private var lastSpan: String?
     private var changedAt = Date()
 
-    private let giveUpAfter: TimeInterval = 60
+    private let giveUpAfter: TimeInterval = 240      // people often read it through before they fix a word
     private let settledFor: TimeInterval = 8
 
     var isWatching: Bool { timer != nil }

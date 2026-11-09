@@ -15,7 +15,10 @@ Rules every idea has to pass: it runs on this Mac, it keeps plain files, it need
 | Scheduled task that opens your morning apps: dry-run check, add, remove | launchd, cron form shown |
 | Hand a brief to the Hermes fleet or copy it for any agent | `Hermes`, `fleet-bridge` |
 | A repeated sentence becomes a phrase you can say | Workday > Ideas |
-| MCP `workday_summary` (apps and minutes only) | `scripts/freeflow-mcp.py` |
+| MCP `workday_summary` (apps and minutes only) and `workday_detail` (cleaned screen text and typing notes, if switched on) | `scripts/freeflow-mcp.py` |
+| Deeper notes, each opt-in: the text on the front window, how I type (counts and finished lines), small pictures kept 3 days; redacted, 7-day expiry, forget, closer look by Hermes | `Sources/Detail.swift`, Workday page |
+| Double tap of the talk key to start hands-free (Wispr-style); a card with the words when a dictation did not reach a text box | `Sources/Input.swift`, `Sources/Unsent.swift` |
+| Learn from my own typing: a fix made twice is kept; accuracy meter | `Sources/Typing.swift`, Learning page |
 | One command that checks every function | `scripts/smoke.sh` |
 
 ## Next, in the order I would do them
@@ -24,14 +27,15 @@ Rules every idea has to pass: it runs on this Mac, it keeps plain files, it need
 
 **2. Voice kickoff (small, answers the repeating-yourself problem).** Say "kick off" plus a goal in a project folder: FreeFlow runs `kickoff init`, pastes the brief with the standing rules (work start to end, verify by reproducing, name the playbook files you used), and shows the setup receipt (`kickoff check`) in the bar: green or the missing item. One sentence replaces the paragraph you retype, and the receipt says whether it took.
 
-**3. Never lose a dictation (small).** Paste last result on a key; an "Unsent" list when pasting failed or focus moved; "scratch that" deletes the last dictation; restore the clipboard after pasting; retry any history row with a different tone or engine.
+**3. Never lose a dictation (partly built).** Built: a card with Copy / Paste again when the words did not reach a text box. Still to do: paste last result on a key; an "Unsent" list; "scratch that" deletes the last dictation; retry any history row with a different tone or engine; keep the recording when transcription fails.
 
 **4. Workday v2 (medium).**
 - Weekly review written to Jots on Friday: where the time went, routines found, ideas not yet acted on.
 - Status read-back: after Send to Hermes, the idea shows "queued, building, done" from the card.
 - More task kinds an agent builds under the same check-add-remove pattern: run a command at a time, a report to Jots every morning, a reminder.
 - Browser sites (needs the Automation permission, so opt-in per browser) so "Shopify admin, 3 hours" can be told from "Chrome".
-- Optional screen-text mode: on-device text recognition of the front window every minute, text only, the picture discarded at once, per-app allow list, off by default. Only if the app and title are not enough to find the routine.
+- Per-app allow list for the deeper notes (today: everything except password managers, terminals, private windows and your own list).
+- Let the deeper notes feed the ideas list directly: repeated typed lines and repeated screen text found without an agent.
 - Ask about my week: a local model answers from the notes ("when did I last touch the EMIS theme?").
 
 **5. Writing (medium).** A Rewrite level above Medium for people who want the AI to rephrase and expand; tone by category (personal, work, email, other) with a very casual option; language per app; file and folder names from a project folder added to the vocabulary so code and paths are spelled right.
@@ -43,5 +47,5 @@ Rules every idea has to pass: it runs on this Mac, it keeps plain files, it need
 ## Not doing
 
 - An account, a server, a subscription or cloud sync (use a folder you choose).
-- Recording the screen as video, logging keystrokes, or reading the clipboard's contents.
+- Recording the screen as video, logging individual keystrokes, or reading the clipboard's contents. (The deeper notes keep screen text, typing counts and finished lines, cleaned, and only if switched on.)
 - Letting any automation publish, send, spend or change a live account on its own. A task FreeFlow creates only opens apps; anything bigger goes to an agent as a brief and waits for a yes.

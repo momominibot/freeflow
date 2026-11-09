@@ -3,8 +3,8 @@ import ApplicationServices
 import Foundation
 
 // Workday: a private log of which app and window you are in, so FreeFlow can spot routines worth automating.
-// It keeps no screenshots and no text from your screen. Only the app, a cleaned-up window title and the time, on this Mac,
-// for 14 days. Password managers and private windows are never recorded.
+// By itself it keeps no screenshots and no text from your screen: only the app, a cleaned-up window title and the time, on this Mac,
+// for 14 days. Password managers and private windows are never recorded. Detail.swift holds the optional deeper notes.
 
 // MARK: - What is stored
 
@@ -65,7 +65,7 @@ enum Redact {
     }
 
     private static func re(_ p: String) -> NSRegularExpression { try! NSRegularExpression(pattern: p, options: [.caseInsensitive]) }
-    private static let patterns: [(NSRegularExpression, String)] = [
+    static let patterns: [(NSRegularExpression, String)] = [
         (re("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}"), "<email>"),
         (re("https?://\\S+"), "<link>"),
         (re("\\b(?:sk|pk|shpat|shpss|ghp|gho|xox[bap])[-_][A-Za-z0-9_-]{8,}"), "<key>"),
@@ -271,7 +271,7 @@ enum WorkdayAnalysis {
             secs[s.bundle] = (s.name, (secs[s.bundle]?.1 ?? 0) + s.seconds)
         }
         return secs.map { AppTime(name: $0.value.0, bundle: $0.key, minutes: Int(($0.value.1 / 60).rounded())) }
-            .filter { $0.minutes >= 1 }.sorted { $0.minutes > $1.minutes }
+            .filter { $0.minutes >= 1 }.sorted { ($0.minutes, $1.name, $1.bundle) > ($1.minutes, $0.name, $0.bundle) }
     }
 
     static func daysWithData(_ segs: [WorkSegment], cal: Calendar = .current) -> Int {
@@ -306,7 +306,8 @@ enum WorkdayAnalysis {
             out.append(Habit(name: best.first?.name ?? bundle, bundle: bundle, minuteOfDay: mins[mins.count / 2], days: best.count,
                              ofDays: ofDays, weekdaysOnly: weekdays.allSatisfy { (2...6).contains($0) }))
         }
-        return out.sorted { ($0.days, -$0.minuteOfDay) > ($1.days, -$1.minuteOfDay) }
+        // ties are broken by the app, so the order never depends on how a dictionary happened to be laid out
+        return out.sorted { ($0.days, -$0.minuteOfDay, $1.bundle) > ($1.days, -$1.minuteOfDay, $0.bundle) }
     }
 
     /// Runs of three steps between apps (A, then B, then C) that keep coming back, so a copy-and-paste loop shows up.
@@ -335,7 +336,7 @@ enum WorkdayAnalysis {
         }
         return counts.values.filter { $0.times >= minTimes && $0.days.count >= 2 }
             .map { Loop(names: $0.names, times: $0.times, days: $0.days.count, minutes: Int(($0.secs / 60).rounded())) }
-            .sorted { $0.times > $1.times }
+            .sorted { ($0.times, $0.minutes, $1.names.joined(separator: ">")) > ($1.times, $1.minutes, $0.names.joined(separator: ">")) }
     }
 
     /// Sentences you have dictated again and again, found by how many 3-word runs they share.
@@ -357,7 +358,7 @@ enum WorkdayAnalysis {
                 }
             }
         }
-        return clusters.filter { $0.ids.count >= minTimes }.map { Phrase(text: $0.sample, times: $0.ids.count) }.sorted { $0.times > $1.times }
+        return clusters.filter { $0.ids.count >= minTimes }.map { Phrase(text: $0.sample, times: $0.ids.count) }.sorted { ($0.times, $1.text) > ($1.times, $0.text) }
     }
 }
 
