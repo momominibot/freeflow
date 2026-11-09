@@ -4,3 +4,5 @@ dist/
 docs/reviews/*.log
 docs/reviews/*-input.md
 __pycache__/
+assets/art/raw/
+assets/art/raw-logo/

@@ -67,7 +67,41 @@ final class Recorder {
     var onLevel: ((Float) -> Void)?
     private var current: Session?
 
+    /// How long to wait for macOS to open the microphone. When the system audio service is stuck the call never returns,
+    /// and waiting on the main thread would freeze the whole app.
+    static let openTimeout: TimeInterval = 2.5
+    private(set) var lastStartTimedOut = false
+
+    /// Starts recording. Returns false if the microphone does not start, or does not answer within `openTimeout`.
     func start() -> Bool {
+        lastStartTimedOut = false
+        let lock = NSLock()
+        var finished = false
+        var abandoned = false
+        var ok = false
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let started = self.startNow()
+            lock.lock()
+            let late = abandoned
+            if !late { ok = started; finished = true }
+            lock.unlock()
+            if late, started { DispatchQueue.main.async { self.cancel() } }   // it answered after we gave up: undo it
+            done.signal()
+        }
+        if done.wait(timeout: .now() + Self.openTimeout) == .timedOut {
+            lock.lock()
+            if !finished { abandoned = true }
+            let result = finished && ok
+            lock.unlock()
+            if !finished { lastStartTimedOut = true }
+            return result
+        }
+        lock.lock(); defer { lock.unlock() }
+        return ok
+    }
+
+    private func startNow() -> Bool {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("FreeFlow", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("take-\(UUID().uuidString).wav")

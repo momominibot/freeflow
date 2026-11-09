@@ -129,22 +129,31 @@ final class Rewriter {
     - Return plain text ready to paste. No preamble, no quotes around the answer, no explanation.
     """
 
+    /// How long a dictation tidy-up may take before the plain text is used instead: 5 seconds plus a little per word, never more than 20.
+    /// A busy or cold model must never make typed words wait half a minute.
+    static func cleanupBudget(words: Int) -> TimeInterval { min(20, 5 + Double(words) * 0.03) }
+
     /// Tidies a dictation. Falls back to `fallback` (the rule-cleaned text) when the model is unavailable or produces something that does not look like the same dictation.
-    func cleanup(_ text: String, style: Style, fallback: String, completion: @escaping (String, Bool) -> Void) {
-        guard style != .plain else { return completion(fallback, false) }
+    /// `tone` is your own mode's instruction; when given it is used instead of the built-in style's.
+    func cleanup(_ text: String, style: Style, tone: String? = nil, fallback: String, completion: @escaping (String, Bool) -> Void) {
+        guard style != .plain || tone != nil else { return completion(fallback, false) }
         let words = TextCleaner.wordCount(text)
         guard words >= 3 else { return completion(fallback, false) }
         var system = Self.cleanupSystem
-        if !style.instruction.isEmpty { system += "\n- Tone: " + style.instruction }
+        let instruction = tone ?? style.instruction
+        if !instruction.isEmpty { system += "\n- Tone: " + instruction }
         let body: [String: Any] = [
             "model": model, "stream": false, "think": false, "keep_alive": "60m",
             "options": ["temperature": 0, "num_predict": min(1500, words * 3 + 80)],
             "messages": [["role": "system", "content": system], ["role": "user", "content": text]],
         ]
-        post("api/chat", body) { result in
+        let budget = Self.cleanupBudget(words: words)
+        post("api/chat", body, timeout: budget) { result in
             switch result {
             case .failure(let e):
-                self.lastError = e.localizedDescription
+                self.lastError = (e as? URLError)?.code == .timedOut
+                    ? "The AI took longer than \(Int(budget)) s, used the rule-based version"
+                    : e.localizedDescription
                 completion(fallback, false)
             case .success(let out):
                 let cleaned = Self.tidy(out)
@@ -174,6 +183,72 @@ final class Rewriter {
         ]
         post("api/chat", body) { result in
             completion(result.map { Self.tidy($0) })
+        }
+    }
+
+    // MARK: - Meeting notes
+
+    static let summarySystem = """
+    You turn the transcript of a meeting or recording into short notes. Use ONLY what the transcript says.
+    Write exactly these three sections, in this order:
+    ## Summary
+    3 to 5 bullets with the main points.
+    ## Decisions
+    Bullets, one per decision. If none were made, write "None stated".
+    ## Action items
+    Bullets as "Who: what (by when, only if it was said)". If there are none, write "None stated".
+    Rules:
+    - Never invent names, dates, numbers or tasks. If a speaker is unclear, write "someone". The transcript marks the speakers You and Others; keep those words.
+    - Keep names, numbers and local words exactly as written. Do not translate; write the notes in the language of the transcript.
+    - Plain words. No greetings, no comments about the notes, no dashes used as punctuation.
+    """
+
+    static let summaryPartSystem = """
+    You receive one part of a long transcript. Write short bullet notes of it: the key points, any decisions, and any action items (who, what, by when only if said). Use ONLY what the transcript says; never invent names, dates or numbers. Bullets only, in the language of the transcript, no preamble.
+    """
+
+    static let summaryCombineSystem = """
+    You receive bullet notes from consecutive parts of one meeting. Merge them into notes with exactly these sections, in this order:
+    ## Summary
+    3 to 5 bullets with the main points.
+    ## Decisions
+    Bullets. If none, write "None stated".
+    ## Action items
+    Bullets as "Who: what (by when, only if said)". If none, write "None stated".
+    Remove repeats. Use ONLY what the notes say; never invent names, dates or numbers. Plain words, no preamble.
+    """
+
+    /// Writes notes (summary, decisions, action items) for a transcript. Long transcripts are noted in parts and then merged,
+    /// so nothing is cut off by the model's memory.
+    func summarize(_ transcript: String, completion: @escaping (Result<String, Error>) -> Void) {
+        let parts = Summarizer.parts(transcript)
+        guard parts.count > 1 else {
+            return summarizeOne(system: Self.summarySystem, text: transcript, completion: completion)
+        }
+        var notes: [String] = []
+        func next(_ i: Int) {
+            if i == parts.count {
+                let joined = notes.enumerated().map { "PART \($0.offset + 1):\n\($0.element)" }.joined(separator: "\n\n")
+                return summarizeOne(system: Self.summaryCombineSystem, text: joined, completion: completion)
+            }
+            summarizeOne(system: Self.summaryPartSystem, text: parts[i]) { result in
+                switch result {
+                case .success(let t): notes.append(t); next(i + 1)
+                case .failure(let e): completion(.failure(e))
+                }
+            }
+        }
+        next(0)
+    }
+
+    private func summarizeOne(system: String, text: String, completion: @escaping (Result<String, Error>) -> Void) {
+        let body: [String: Any] = [
+            "model": model, "stream": false, "think": false, "keep_alive": "60m",
+            "options": ["temperature": 0.2, "num_predict": 900, "num_ctx": 8192],
+            "messages": [["role": "system", "content": system], ["role": "user", "content": "TRANSCRIPT:\n\(text)"]],
+        ]
+        post("api/chat", body, timeout: 300) { result in
+            completion(result.map { Summarizer.tidy(Self.tidy($0)) })
         }
     }
 
@@ -261,12 +336,21 @@ final class Rewriter {
 
     // MARK: - HTTP
 
-    private func post(_ path: String, _ body: [String: Any], completion: @escaping (Result<String, Error>) -> Void) {
+    private func post(_ path: String, _ body: [String: Any], timeout: TimeInterval? = nil,
+                      completion: @escaping (Result<String, Error>) -> Void) {
         var req = URLRequest(url: base.appendingPathComponent(path))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        session.dataTask(with: req) { data, resp, err in
+        var use = session
+        if let t = timeout {
+            // Writing notes for a long meeting takes longer than a dictation clean-up, so it gets its own patience.
+            let c = URLSessionConfiguration.ephemeral
+            c.timeoutIntervalForRequest = t
+            req.timeoutInterval = t
+            use = URLSession(configuration: c)
+        }
+        use.dataTask(with: req) { data, resp, err in
             if let err = err { return completion(.failure(err)) }
             guard let data = data, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 return completion(.failure(FFError(message: "Unreadable reply from the AI")))

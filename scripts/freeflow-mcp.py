@@ -116,7 +116,12 @@ def t_get_snippets():
 
 def t_get_usage():
     p = prefs()
-    by_app = p.get("wordsByApp", {}) or {}
+    by_app = {}
+    for k, v in (p.get("wordsByApp", {}) or {}).items():
+        try:
+            by_app[k] = int(v)          # a count saved as text still counts
+        except (TypeError, ValueError):
+            continue
     today = datetime.now().strftime("%Y-%m-%d")
     words_today = p.get("wordsToday", 0) if p.get("wordsDay") == today else 0
     return {
@@ -126,6 +131,31 @@ def t_get_usage():
         "cleanup_level": p.get("cleanupLevel", "medium"),
         "language": p.get("language", "en"),
     }
+
+
+def t_workday_summary(days=1):
+    """Minutes per app for the last N days from the workday notes. App names and minutes only: no window titles."""
+    days = max(1, min(int(days), 14))
+    folder = os.path.join(SUPPORT, "workday")
+    on = bool(prefs().get("workdayOn", False))
+    out = {"notes_are_on": on, "days": {}}
+    if not os.path.isdir(folder):
+        return out
+    cutoff = (datetime.now() - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    for name in sorted(os.listdir(folder)):
+        if not name.endswith(".jsonl") or name[:-6] < cutoff:
+            continue
+        mins = {}
+        for line in read(os.path.join(folder, name)).splitlines():
+            try:
+                s = json.loads(line)
+            except ValueError:
+                continue
+            if s.get("idle") or s.get("app") == "com.momominibot.freeflow":
+                continue
+            mins[s.get("name") or s.get("app")] = mins.get(s.get("name") or s.get("app"), 0) + (s["e"] - s["s"]) / 60
+        out["days"][name[:-6]] = [{"app": k, "minutes": round(v)} for k, v in sorted(mins.items(), key=lambda kv: -kv[1]) if v >= 1][:15]
+    return out
 
 
 def t_add_dictionary_word(word, correction=None, team=False):
@@ -176,6 +206,7 @@ TOOLS = [
     ("get_dictionary", "Personal and team dictionary: words Whisper should spell a certain way, and wrong => right swaps.", {"type": "object", "properties": {}}, t_get_dictionary, False),
     ("get_snippets", "Personal and team snippets: spoken cue => expansion.", {"type": "object", "properties": {}}, t_get_snippets, False),
     ("get_usage", "Word counts today and all time, top apps, current settings.", {"type": "object", "properties": {}}, t_get_usage, False),
+    ("workday_summary", "Minutes per app for the last N days (1 to 14) from the user's workday notes, to spot routines worth automating. Only if the user switched the notes on. App names only, never window titles.", {"type": "object", "properties": {"days": {"type": "integer", "minimum": 1, "maximum": 14}}}, t_workday_summary, False),
     ("add_dictionary_word", "Teach FreeFlow a word, optionally with the misspelling it should replace. Set team=true to add it to the shared team dictionary.",
      {"type": "object", "properties": {"word": {"type": "string"}, "correction": {"type": "string", "description": "if given, 'word' is the wrong spelling and this is the right one"}, "team": {"type": "boolean", "default": False}}, "required": ["word"]},
      t_add_dictionary_word, True),

@@ -1,0 +1,6 @@
+Manrope: Copyright 2019 The Manrope Project Authors (https://github.com/sharanda/manrope)
+Newsreader: Copyright 2020 The Newsreader Project Authors (http://github.com/productiontype/Newsreader)
+
+Both fonts are licensed under the SIL Open Font License, Version 1.1.
+Here they are static instances cut from the variable fonts (weights 500 to 800, Latin only).
+Full licence text: https://openfontlicense.org

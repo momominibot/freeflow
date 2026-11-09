@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 enum Paths {
     static let home = FileManager.default.homeDirectoryForCurrentUser
@@ -8,10 +9,14 @@ enum Paths {
     static let learned = support.appendingPathComponent("learned.txt")
     static let snippets = support.appendingPathComponent("snippets.txt")
     static let styles = support.appendingPathComponent("styles.txt")
+    static let modes = support.appendingPathComponent("modes.json")
+    static let scratchpad = support.appendingPathComponent("scratchpad", isDirectory: true)
     static let history = support.appendingPathComponent("history.txt")
     static let historyJSON = support.appendingPathComponent("history.jsonl")
     static let logs = home.appendingPathComponent("Library/Logs/FreeFlow", isDirectory: true)
     static let takes = support.appendingPathComponent("takes", isDirectory: true)
+    static let meetings = support.appendingPathComponent("meetings", isDirectory: true)
+    static let workday = support.appendingPathComponent("workday", isDirectory: true)
     static let qwenDir = support.appendingPathComponent("engines/qwen", isDirectory: true)
     static let qwenPython = qwenDir.appendingPathComponent("venv/bin/python")
 }
@@ -33,6 +38,30 @@ enum SpeechEngine: String, CaseIterable {
         case .qwen: return "Qwen3-ASR"
         }
     }
+}
+
+/// Light, dark royal purple, or whatever the Mac is set to.
+enum AppearanceChoice: String, CaseIterable {
+    case system, light, dark
+
+    var chipTitle: String {
+        switch self {
+        case .system: return "Match my Mac"
+        case .light: return "Light"
+        case .dark: return "Dark purple"
+        }
+    }
+
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: return nil
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
+        }
+    }
+
+    /// Puts the saved choice on every window the app has.
+    static func applySaved() { NSApp.appearance = Settings.shared.appearance.nsAppearance }
 }
 
 enum TalkKey: String, CaseIterable {
@@ -104,6 +133,23 @@ enum Language: String, CaseIterable {
 final class Settings {
     static let shared = Settings()
     private let d = UserDefaults.standard
+
+    /// Workday notes: which app and window you are in, kept on this Mac for 14 days. Off until you switch it on.
+    var workdayOn: Bool {
+        get { d.bool(forKey: "workdayOn") }
+        set { d.set(newValue, forKey: "workdayOn") }
+    }
+
+    /// Seconds between looks at the front window (5 by default).
+    var workdayInterval: TimeInterval {
+        get { let v = d.double(forKey: "workdayInterval"); return v >= 1 ? min(v, 60) : 5 }
+        set { d.set(newValue, forKey: "workdayInterval") }
+    }
+
+    var appearance: AppearanceChoice {
+        get { AppearanceChoice(rawValue: d.string(forKey: "appearance") ?? "") ?? .system }
+        set { d.set(newValue.rawValue, forKey: "appearance") }
+    }
 
     var talkKey: TalkKey {
         get { TalkKey(rawValue: d.string(forKey: "talkKey") ?? "") ?? .rightOption }
@@ -184,6 +230,75 @@ final class Settings {
         set { d.set(newValue, forKey: "shareUsage") }
     }
 
+    /// What FreeFlow does when it notices you are in a call: nothing, ask, or start taking notes after a short countdown.
+    var meetingMode: MeetingMode {
+        get { MeetingMode(rawValue: d.string(forKey: "meetingMode") ?? "") ?? .auto }
+        set { d.set(newValue.rawValue, forKey: "meetingMode") }
+    }
+
+    /// Also write down the other people (what the Mac plays). Needs Screen & System Audio Recording.
+    var meetingOthers: Bool {
+        get { d.object(forKey: "meetingOthers") as? Bool ?? true }
+        set { d.set(newValue, forKey: "meetingOthers") }
+    }
+
+    /// Seconds before an automatic start, so you can say no. Wispr uses 10.
+    var meetingCountdown: Int {
+        get { max(3, min(60, d.object(forKey: "meetingCountdown") as? Int ?? 10)) }
+        set { d.set(newValue, forKey: "meetingCountdown") }
+    }
+
+    /// Length of each piece sent to the speech engine. 30 seconds; shorter only for checks.
+    var meetingChunkSeconds: Double {
+        let v = d.double(forKey: "meetingChunkSeconds")
+        return v >= 5 ? v : 30
+    }
+
+    /// The small resting bar at the bottom of the screen, like Wispr's. On by default.
+    var showIdleBar: Bool {
+        get { d.object(forKey: "showIdleBar") as? Bool ?? true }
+        set { d.set(newValue, forKey: "showIdleBar") }
+    }
+
+    /// Set once the command that lets Claude Code search your dictations has been copied (a step in the setup list).
+    var mcpCopied: Bool {
+        get { d.bool(forKey: "mcpCopied") }
+        set { d.set(newValue, forKey: "mcpCopied") }
+    }
+
+    /// Your name, for the greeting and the team list. Starts from the Mac's full name.
+    var firstName: String {
+        get {
+            if let v = d.string(forKey: "firstName") { return v }
+            return Settings.guessFirstName(full: NSFullUserName(), account: NSUserName())
+        }
+        set { d.set(newValue, forKey: "firstName") }
+    }
+
+    var lastName: String {
+        get {
+            if let v = d.string(forKey: "lastName") { return v }
+            let parts = NSFullUserName().split(separator: " ")
+            return parts.count > 1 ? parts.dropFirst().joined(separator: " ") : ""
+        }
+        set { d.set(newValue, forKey: "lastName") }
+    }
+
+    /// Tips and banners the user has closed.
+    func isDismissed(_ key: String) -> Bool { (d.stringArray(forKey: "dismissed") ?? []).contains(key) }
+    func dismiss(_ key: String) { d.set(Array(Set((d.stringArray(forKey: "dismissed") ?? []) + [key])), forKey: "dismissed") }
+
+    /// Back to zero, after the history is deleted.
+    func resetUsage() {
+        for k in ["wordsTotal", "wordsToday", "wordsDay", "wordsByApp"] { d.removeObject(forKey: k) }
+    }
+
+    /// The window opens by itself the first time, then only when you ask for it.
+    var seenHome: Bool {
+        get { d.bool(forKey: "seenHome") }
+        set { d.set(newValue, forKey: "seenHome") }
+    }
+
     var debugTriggers: Bool { d.bool(forKey: "debugTriggers") }
 
     // MARK: - Usage
@@ -200,14 +315,35 @@ final class Settings {
         d.set(today + n, forKey: "wordsToday")
         d.set(wordsTotal + n, forKey: "wordsTotal")
         if let app = app, !app.isEmpty {
-            var byApp = d.dictionary(forKey: "wordsByApp") as? [String: Int] ?? [:]
+            var byApp = wordsByApp
             byApp[app, default: 0] += n
             d.set(byApp, forKey: "wordsByApp")
         }
     }
 
+    /// The first word of the Mac's full name, unless that name is only the account name typed in lower case ("michiyomimi"),
+    /// which is not a name to greet someone by.
+    static func guessFirstName(full: String, account: String) -> String {
+        let name = full.trimmingCharacters(in: .whitespaces)
+        guard let first = name.split(separator: " ").first.map(String.init), !first.isEmpty else { return "" }
+        if name == name.lowercased(), name.lowercased() == account.lowercased() { return "" }
+        return first
+    }
+
+    /// Words per app. A count that was saved as text ("33") still counts, so one odd entry never wipes the rest.
+    var wordsByApp: [String: Int] { Settings.counts(d.dictionary(forKey: "wordsByApp") ?? [:]) }
+
+    static func counts(_ raw: [String: Any]) -> [String: Int] {
+        var out: [String: Int] = [:]
+        for (k, v) in raw {
+            if let n = v as? Int { out[k] = n }
+            else if let s = v as? String, let n = Int(s.trimmingCharacters(in: .whitespaces)) { out[k] = n }
+        }
+        return out
+    }
+
     func topApps(_ n: Int) -> [(String, Int)] {
-        let byApp = d.dictionary(forKey: "wordsByApp") as? [String: Int] ?? [:]
+        let byApp = wordsByApp
         return byApp.sorted { $0.value > $1.value }.prefix(n).map { ($0.key, $0.value) }
     }
 

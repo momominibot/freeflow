@@ -1,0 +1,20 @@
+{
+  "engine": "Kokoro-82M through kokoro-onnx. Apache-2.0 weights, runs on this Mac, no cloud.",
+  "model_dir": "~/Library/Application Support/FreeFlow/voices",
+  "model_files": ["kokoro-v1.0.onnx", "voices-v1.0.bin"],
+  "default": "af_heart",
+  "speed": 1.0,
+  "sample_text": "Hi Maria, the quarterly review is on Thursday at three. Could you send me the numbers before then?",
+  "pairs": { "meeting": ["af_heart", "am_michael"] },
+  "voices": [
+    { "id": "af_heart",  "alias": "warm",           "name": "Heart",   "accent": "US", "gender": "female", "feel": "warm, easy, the all-round pick", "used_for": "FreeFlow smoke test (dictation, notes, commands); YourDigitalDNA reel" },
+    { "id": "af_nicole", "alias": "calm",           "name": "Nicole",  "accent": "US", "gender": "female", "feel": "soft and slow, close to the microphone", "used_for": "Rhythme guide voice (speed 0.88)" },
+    { "id": "af_bella",  "alias": "bright",         "name": "Bella",   "accent": "US", "gender": "female", "feel": "bright and lively", "used_for": "extra option" },
+    { "id": "af_sarah",  "alias": "friendly",       "name": "Sarah",   "accent": "US", "gender": "female", "feel": "friendly, even, clear", "used_for": "extra option" },
+    { "id": "am_michael","alias": "narrator",       "name": "Michael", "accent": "US", "gender": "male",   "feel": "steady, a clear narrator", "used_for": "Reinstate Detectives reels; second speaker in the smoke test meeting" },
+    { "id": "am_adam",   "alias": "casual",         "name": "Adam",    "accent": "US", "gender": "male",   "feel": "casual and relaxed", "used_for": "Mew Mew sitcom" },
+    { "id": "am_liam",   "alias": "light",          "name": "Liam",    "accent": "US", "gender": "male",   "feel": "light and younger", "used_for": "Mew Mew sitcom (trim its breath tails, then check with Whisper)" },
+    { "id": "bm_daniel", "alias": "british-male",   "name": "Daniel",  "accent": "UK", "gender": "male",   "feel": "British, measured", "used_for": "Reinstate Detectives reels" },
+    { "id": "bf_emma",   "alias": "british-female", "name": "Emma",    "accent": "UK", "gender": "female", "feel": "British, clear and polite", "used_for": "extra option" }
+  ]
+}

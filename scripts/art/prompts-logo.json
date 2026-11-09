@@ -1,0 +1,10 @@
+{
+  "style": "Soft watercolour kawaii logo mark in a pearly pastel palette of lilac, blush pink and peach with a gentle white glow, like a children's storybook and like a premium app icon. Rounded cute shapes, glossy highlights, a few tiny sparkles. One single centred symmetrical subject, front view, with generous empty margin, on a plain flat very pale lavender background (#F8F3FB). No text, no letters, no numbers, no border, no frame, no cast shadow on the ground.",
+  "mascot": "The mascot is a round pearly speech-bubble creature with a small rounded tail at the bottom left, an iridescent lilac to blush to peach body, big glossy deep-violet eyes with small white sparkles, pink blush cheeks and a tiny smile. It has no arms.",
+  "images": [
+    {"name": "logo-a", "seed": 21, "scene": "A soft glowing white wavy line flows horizontally across the lower part of its body, like a sound wave or a flowing ribbon of light."},
+    {"name": "logo-b", "seed": 22, "scene": "Three soft glowing curved sound-wave arcs radiate from the right side of its body, like a voice flowing out, and a few sparkles float around it."},
+    {"name": "logo-c", "seed": 23, "scene": "It sits centred inside a large rounded-square app-icon tile with a soft lilac gradient and a pearly glow, with a glowing white wavy line across its lower body. Leave the tile's corners clearly rounded."},
+    {"name": "logo-d", "seed": 24, "scene": "It is drawn larger and simpler, as a bold friendly emblem: just the bubble face with a thin glowing white wave line underneath it, lots of soft glow around it."}
+  ]
+}

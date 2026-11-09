@@ -12,6 +12,7 @@ struct Outcome {
     var pressEnter = false
     var copyOnly = false    // Command Mode result with no editable field: show and copy instead of pasting
     var engine = ""         // which speech engine heard it, for saved recordings
+    var secs: Double = 0    // how long the person talked, for words per minute
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -23,6 +24,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let overlay = Overlay()
     private let ai = Rewriter.shared
     private var statusItem: NSStatusItem!
+    private let bridge = AppBridge()
+    private var studio: StudioWindowController?
+    private lazy var meetings = MeetingController(
+        overlay: overlay,
+        transcribe: { [weak self] url, done in self?.transcribeForNotes(url, done) ?? done(.failure(FFError(message: "FreeFlow is closing"))) },
+        cleanup: { raw, quiet in
+            TextCleaner.clean(raw, removeFillers: false, vocab: Personalization.load().vocab, quiet: quiet)
+        })
+    private let summarizer = NoteSummarizer()
+    private let workday = WorkdayRecorder()
+    private lazy var files = FileTranscriber(
+        transcribe: { [weak self] url, done in self?.transcribeForNotes(url, done) ?? done(.failure(FFError(message: "FreeFlow is closing"))) },
+        cleanup: { raw in TextCleaner.clean(raw, removeFillers: false, vocab: Personalization.load().vocab, quiet: false) })
 
     private enum Mode { case dictate, command }
     private var isRecording = false
@@ -63,7 +77,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.terminate(nil)
             return
         }
+        Fonts.registerAll()
+        AppearanceChoice.applySaved()
+        workday.log = { [weak self] m in self?.log(m) }
+        if settings.workdayOn { workday.start() }
         _ = Personalization.load()
+        installMainMenu()
+        wireBridge()
+        overlay.start()
+        meetings.changed = { [weak self] in self?.refreshIcon() }
+        meetings.log = { [weak self] m in self?.log(m) }
+        meetings.finishedNote = { [weak self] url in self?.summarize(url, quiet: true) }
+        files.log = { [weak self] m in self?.log(m) }
+        summarizer.log = { [weak self] m in self?.log(m) }
+        files.changed = { [weak self] in self?.studio?.model.reload() }
+        summarizer.changed = { [weak self] in self?.studio?.model.reload() }
+        meetings.start()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         let menu = NSMenu()
@@ -89,26 +118,72 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.ai.warm()
         }
 
+        // Distributed notifications are held back while a menu-bar app is in the background, unless asked for at once.
         DistributedNotificationCenter.default().addObserver(
-            forName: Notification.Name("com.momominibot.freeflow.debug"), object: nil, queue: .main
-        ) { [weak self] note in
-            guard let self = self, self.settings.debugTriggers else { return }
-            switch note.object as? String {
-            case "down": self.talkDown(.dictate)
-            case "command": self.talkDown(.command)
-            case "up": self.talkUp()
-            case "lock": self.lockHandsFree()
-            case "paste":
-                self.pending.append(Outcome(text: "Paste test from FreeFlow.", raw: "", mode: "light", app: nil))
-                self.pumpDeliveries()
-            default: break
-            }
+            self, selector: #selector(handleDebug(_:)), name: Notification.Name("com.momominibot.freeflow.debug"),
+            object: nil, suspensionBehavior: .deliverImmediately)
+
+        // Check of the whole meeting path inside the real app, which has its own microphone permission:
+        //   open -n -a FreeFlow --args --meeting-selftest 25
+        if let i = CommandLine.arguments.firstIndex(of: "--meeting-selftest"), i + 1 < CommandLine.arguments.count {
+            let secs = Double(CommandLine.arguments[i + 1]) ?? 25
+            log("meeting selftest: starting for \(secs)s")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.meetings.startNow() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2 + secs) { [weak self] in self?.meetings.stop() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2 + secs + 30) { NSApp.terminate(nil) }
         }
 
         askForPermissions()
+        if !settings.seenHome {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in self?.openStudio(.home) }
+        }
+    }
+
+    /// Test hooks, only when the debugTriggers setting is on: down, up, tap, command, lock, paste, home:<page>, settings:<tab>,
+    /// pill:<state>, meeting:start, meeting:stop, transform:<id>, file:<path>, summary:<note>.
+    @objc private func handleDebug(_ note: Notification) {
+        guard settings.debugTriggers else { return }
+        switch note.object as? String {
+        case "down": self.talkDown(.dictate)
+        case "command": self.talkDown(.command)
+        case "up": self.talkUp()
+        case "tap":
+            // A real quick tap of the talk key: down, then up 0.1 s later. The first starts hands-free, the next one finishes.
+            self.talkDown(.dictate)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.talkUp() }
+        case "lock": self.lockHandsFree()
+        case "workday:on": self.settings.workdayOn = true; self.workday.start()
+        case "workday:off": self.settings.workdayOn = false; self.workday.stop()
+        case "workday:flush": self.workday.flush()
+        case "meeting:start": self.meetings.startNow()
+        case "meeting:stop": self.meetings.stop()
+        case "paste":
+            self.pending.append(Outcome(text: "Paste test from FreeFlow.", raw: "", mode: "light", app: nil))
+            self.pumpDeliveries()
+        default:
+            // Checks and screenshots: "home:<page>" opens the window, "pill:<state>[:text]" shows the bar.
+            guard let cmd = note.object as? String else { break }
+            if cmd.hasPrefix("home:") {
+                self.openStudio(StudioModel.Page(rawValue: String(cmd.dropFirst(5))) ?? .home)
+                self.studio?.model.settingsTab = nil
+            } else if cmd.hasPrefix("settings:") {
+                self.openStudio(nil)
+                self.studio?.model.openSettings(SettingsTab(rawValue: String(cmd.dropFirst(9))) ?? .general)
+            } else if cmd.hasPrefix("transform:") {
+                if let t = ModeStore.load().transforms.first(where: { $0.id == String(cmd.dropFirst(10)) }) { self.runTransform(t) }
+            } else if cmd.hasPrefix("file:") {
+                self.startFile(URL(fileURLWithPath: String(cmd.dropFirst(5))))
+            } else if cmd.hasPrefix("summary:") {
+                self.summarize(Paths.meetings.appendingPathComponent(String(cmd.dropFirst(8))), quiet: false)
+            } else if cmd.hasPrefix("pill:") {
+                let parts = cmd.dropFirst(5).split(separator: ":", maxSplits: 1).map(String.init)
+                self.overlay.preview(parts.first ?? "idle", text: parts.count > 1 ? parts[1] : "")
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if workday.running { workday.stop() }
         server.stop()
     }
 
@@ -199,7 +274,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         guard recorder.start() else {
-            overlay.flash("Microphone didn't start", seconds: 2)
+            if recorder.lastStartTimedOut {
+                log("microphone did not answer within \(Recorder.openTimeout)s: macOS audio looks stuck")
+                overlay.flash("The microphone isn't answering. macOS audio is stuck: restart the Mac, or run  sudo killall coreaudiod", seconds: 7)
+            } else {
+                overlay.flash("Microphone didn't start", seconds: 2)
+            }
             return
         }
         isRecording = true
@@ -306,16 +386,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let light = TextCleaner.clean(raw, removeFillers: settings.removeFillers, vocab: p.vocab, quiet: quiet)
         var base = level == .none ? TextCleaner.raw(raw, quiet: quiet) : light
         if base.isEmpty { return done(id, nil, file: take.url) }
+        // "Note to self ..." goes to the Scratchpad instead of being typed into the app in front.
+        if let note = ScratchStore.noteToSelf(base) {
+            ScratchStore.create(text: note)
+            log("take #\(id) saved to Jots, \(TextCleaner.wordCount(note)) words")
+            overlay.flash("Saved to your Jots", seconds: 2.5)
+            return done(id, nil, file: take.url, keepOverlay: true)
+        }
         let expanded = Snippet.apply(p.snippets, to: base)
         let snippetHit = expanded != base
         base = expanded
         let cmd = SpokenCommands.parse(base)
         var outcome = Outcome(text: cmd.text, raw: TextCleaner.raw(raw, quiet: quiet), mode: level.rawValue, app: app, pressEnter: cmd.pressEnter)
+        outcome.secs = take.duration
 
         let style = p.style(for: app)
+        let mode = ModeStore.tone(for: app, in: ModeStore.load())
         log("take #\(id) transcribed \(TextCleaner.wordCount(raw)) words, level \(level.rawValue), style \(style.rawValue)")
-        guard level == .medium, !snippetHit, style != .plain, ai.cachedAvailable || ai.isAvailable() else {
-            if level == .medium, !aiNoted, !ai.cachedAvailable, style != .plain, !snippetHit {
+        guard level == .medium, !snippetHit, style != .plain || mode != nil, ai.cachedAvailable || ai.isAvailable() else {
+            if level == .medium, !aiNoted, !ai.cachedAvailable, style != .plain || mode != nil, !snippetHit {
                 aiNoted = true
                 overlay.flash("Local AI not running · using rule-based clean-up (menu: AI status)", seconds: 3)
             }
@@ -324,7 +413,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         overlay.showTranscribing(label: "Tidying…")
         let started = Date()
-        ai.cleanup(cmd.text, style: style, fallback: cmd.text) { text, usedAI in
+        if let m = mode { log("take #\(id) mode \(m.name)") }
+        ai.cleanup(cmd.text, style: style, tone: mode?.prompt, fallback: cmd.text) { text, usedAI in
             DispatchQueue.main.async {
                 self.log(String(format: "take #%d ai %@ in %.2fs", id, usedAI ? "used" : "fallback", Date().timeIntervalSince(started)))
                 outcome.text = text
@@ -465,204 +555,112 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Menu bar
 
+    /// The two dots and a smile from the Rhythme corner, drawn as a template image so the menu bar tints it.
+    private func faceIcon(talking: Bool, flat: Bool) -> NSImage {
+        let img = NSImage(size: NSSize(width: 22, height: 16), flipped: false) { _ in
+            NSColor.black.setFill()
+            NSColor.black.setStroke()
+            NSBezierPath(ovalIn: NSRect(x: 3.2, y: 8.4, width: 3.8, height: 3.8)).fill()
+            NSBezierPath(ovalIn: NSRect(x: 15.0, y: 8.4, width: 3.8, height: 3.8)).fill()
+            if talking {
+                NSBezierPath(ovalIn: NSRect(x: 8.9, y: 2.6, width: 4.2, height: 5.8)).fill()
+            } else {
+                let m = NSBezierPath()
+                m.lineWidth = 1.8
+                m.lineCapStyle = .round
+                if flat {
+                    m.move(to: NSPoint(x: 8.8, y: 5.4))
+                    m.line(to: NSPoint(x: 13.2, y: 5.4))
+                } else {
+                    m.move(to: NSPoint(x: 8.0, y: 7.4))
+                    m.curve(to: NSPoint(x: 14.0, y: 7.4), controlPoint1: NSPoint(x: 9.2, y: 2.2), controlPoint2: NSPoint(x: 12.8, y: 2.2))
+                }
+                m.stroke()
+            }
+            return true
+        }
+        img.isTemplate = true
+        return img
+    }
+
     private func refreshIcon() {
         guard let button = statusItem?.button else { return }
-        let name: String
+        let image: NSImage?
         if isRecording {
-            name = mode == .command ? "wand.and.stars" : "waveform.circle.fill"
+            image = mode == .command ? symbol("wand.and.stars") : faceIcon(talking: true, flat: false)
         } else if inFlight > 0 {
-            name = "ellipsis.circle"
+            image = faceIcon(talking: false, flat: true)
         } else if server.lastError != nil {
-            name = "mic.slash"
+            image = symbol("mic.slash")
         } else {
-            name = "mic"
+            image = faceIcon(talking: false, flat: false)
         }
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: "FreeFlow")
-        image?.isTemplate = true
+        image?.accessibilityDescription = "FreeFlow"
         button.image = image
         button.appearsDisabled = !server.isReady && !isRecording
+    }
+
+    private func symbol(_ name: String) -> NSImage? {
+        let i = NSImage(systemSymbolName: name, accessibilityDescription: "FreeFlow")
+        i?.isTemplate = true
+        return i
+    }
+
+    /// The short line shown in the window and the menu: is it ready, and on which engine.
+    private func statusLine() -> (text: String, ok: Bool) {
+        if let error = server.lastError { return (error, false) }
+        if !server.isReady { return ("Loading \(settings.engine.short)…", false) }
+        return ("\(settings.engine.short) · offline, no word limit", true)
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         ai.refreshAvailability()
-        let key = settings.talkKey
-
-        let status: String
-        if let error = server.lastError {
-            status = "⚠︎ \(error)"
-        } else if !server.isReady {
-            status = "Loading \(settings.engine.short)…"
-        } else {
-            status = "Ready · \(settings.engine.short) · runs offline, no word limit"
-        }
-        menu.addItem(info(status))
-        menu.addItem(info("Tap \(key.short) to start, tap again to finish · or hold to talk"))
-        if settings.commandMode {
-            menu.addItem(info("Hold \(settings.commandKey.short) and say what to do with selected text"))
-        }
-        let aiOK = ai.cachedAvailable
-        menu.addItem(info(aiOK ? "AI status: local \(settings.aiModel) ready" : "AI status: Ollama not running · AI clean-up and commands are off"))
+        let st = statusLine()
+        menu.addItem(info(st.ok ? "Ready · \(settings.engine.short) · runs offline" : "⚠︎ \(st.text)"))
+        menu.addItem(info("Tap \(settings.talkKey.short) to start, tap again to finish"))
         menu.addItem(.separator())
 
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        let today = f.string(from: NSNumber(value: settings.wordsToday)) ?? "0"
-        let total = f.string(from: NSNumber(value: settings.wordsTotal)) ?? "0"
-        menu.addItem(info("Words today: \(today) · all time: \(total)"))
-        let apps = settings.topApps(5)
-        if !apps.isEmpty {
-            let appMenu = NSMenu()
-            for (id, n) in apps {
-                appMenu.addItem(info("\(appName(id)): \(f.string(from: NSNumber(value: n)) ?? "0")"))
-            }
-            menu.addItem(submenu("Top apps", appMenu))
+        menu.addItem(item("Open FreeFlow", #selector(openHome), symbol: "house"))
+        if workday.running { menu.addItem(info("Workday notes are on (Workday page to switch off)")) }
+        if let now = meetings.now {
+            menu.addItem(item("Stop meeting notes · \(now.app) \(MeetingFile.stamp(now.seconds))", #selector(stopMeetingNotes), symbol: "stop.circle"))
+        } else {
+            menu.addItem(item("Take meeting notes now", #selector(startMeetingNotes), symbol: "person.2"))
         }
-        let copy = item("Copy last result", #selector(copyLast))
+        let copy = item("Copy last result", #selector(copyLast), symbol: "doc.on.doc")
         copy.isEnabled = lastOutcome != nil
         menu.addItem(copy)
         if let last = lastOutcome, last.mode == "medium", last.raw != last.text {
-            menu.addItem(item("Undo AI edit · copy what you actually said", #selector(undoAI)))
+            menu.addItem(item("Undo AI edit · copy what I said", #selector(undoAI), symbol: "arrow.uturn.backward"))
         }
-        menu.addItem(.separator())
-
-        let keyMenu = NSMenu()
-        for k in TalkKey.allCases {
-            let it = item(k.title, #selector(pickKey(_:)))
-            it.representedObject = k.rawValue
-            it.state = k == key ? .on : .off
-            keyMenu.addItem(it)
+        if let last = lastOutcome, last.mode != "command", !last.text.isEmpty {
+            menu.addItem(item("Correct my last dictation…", #selector(correctLast), symbol: "sparkles"))
         }
-        if key == .fn {
-            keyMenu.addItem(.separator())
-            keyMenu.addItem(info("Tip: Keyboard settings › Press 🌐 key to › Do Nothing"))
-        }
-        menu.addItem(submenu("Talk key", keyMenu))
-        let tapItem = item("Tap to start and stop", #selector(toggleTapMode))
-        tapItem.state = settings.tapToToggle ? .on : .off
-        menu.addItem(tapItem)
-
-        let engineMenu = NSMenu()
-        for e in SpeechEngine.allCases {
-            let it = item(e.title, #selector(pickEngine(_:)))
-            it.representedObject = e.rawValue
-            it.state = e == settings.engine ? .on : .off
-            engineMenu.addItem(it)
-        }
-        engineMenu.addItem(.separator())
-        if installingQwen {
-            engineMenu.addItem(info("Installing the Qwen engine… (about 5 GB, a few minutes)"))
-        } else if !WhisperServer.qwenInstalled {
-            engineMenu.addItem(info("Picking Qwen downloads it once (about 5 GB). Nothing is uploaded."))
-        }
-        let keep = item("Keep my recordings on this Mac (to compare engines)", #selector(toggleKeepTakes))
-        keep.state = settings.keepTakes ? .on : .off
-        engineMenu.addItem(keep)
-        engineMenu.addItem(item("Show saved recordings", #selector(showTakes)))
-        engineMenu.addItem(item("Delete saved recordings", #selector(deleteTakes)))
-        menu.addItem(submenu("Speech engine", engineMenu))
-
-        let cmdMenu = NSMenu()
-        let cmdOn = item("Command Mode on", #selector(toggleCommandMode))
-        cmdOn.state = settings.commandMode ? .on : .off
-        cmdMenu.addItem(cmdOn)
-        cmdMenu.addItem(.separator())
-        for k in TalkKey.allCases where k != key {
-            let it = item(k.title, #selector(pickCommandKey(_:)))
-            it.representedObject = k.rawValue
-            it.state = k == settings.commandKey ? .on : .off
-            cmdMenu.addItem(it)
-        }
-        cmdMenu.addItem(.separator())
-        cmdMenu.addItem(info("Select text, hold the key, say \"make this shorter\""))
-        cmdMenu.addItem(info("No selection: say \"reply saying I'll be there at 3\""))
-        menu.addItem(submenu("Command Mode", cmdMenu))
-
-        let langMenu = NSMenu()
-        for l in Language.allCases {
-            let it = item(l.title, #selector(pickLanguage(_:)))
-            it.representedObject = l.rawValue
-            it.state = l == settings.language ? .on : .off
-            langMenu.addItem(it)
-        }
-        menu.addItem(submenu("Language", langMenu))
-
-        let cleanMenu = NSMenu()
-        for c in CleanupLevel.allCases {
-            let it = item(c.title, #selector(pickCleanup(_:)))
-            it.representedObject = c.rawValue
-            it.state = c == settings.cleanupLevel ? .on : .off
-            cleanMenu.addItem(it)
-        }
-        cleanMenu.addItem(.separator())
-        cleanMenu.addItem(info("Medium uses the app you're in: formal in Mail, casual in Slack"))
-        cleanMenu.addItem(item("Edit styles by app…", #selector(editStyles)))
-        menu.addItem(submenu("Auto cleanup", cleanMenu))
-
-        let fillers = item("Remove filler words (um, uh)", #selector(toggleFillers))
-        fillers.state = settings.removeFillers ? .on : .off
-        menu.addItem(fillers)
-        let sounds = item("Start and stop sounds", #selector(toggleSounds))
-        sounds.state = settings.sounds ? .on : .off
-        menu.addItem(sounds)
-        menu.addItem(.separator())
-
-        let learnMenu = NSMenu()
-        let learnOn = item("Learn from my corrections", #selector(toggleLearning))
-        learnOn.state = settings.learnFromFixes ? .on : .off
-        learnMenu.addItem(learnOn)
-        let learnedNow = LearnedFile.load()
-        learnMenu.addItem(info("So far: \(learnedNow.fixes.count) fixes · \(learnedNow.terms.count) words"))
-        learnMenu.addItem(.separator())
-        learnMenu.addItem(item("Correct my last dictation…", #selector(correctLast)))
-        learnMenu.addItem(item("Show what FreeFlow learned…", #selector(showLearned)))
-        learnMenu.addItem(item("Forget everything it learned", #selector(forgetLearned)))
-        learnMenu.addItem(.separator())
-        learnMenu.addItem(info("Fix a word in the text FreeFlow typed, and it remembers"))
-        learnMenu.addItem(info("It reads that text box for about a minute, never password fields"))
-        learnMenu.addItem(info("Only the word pairs are kept, in learned.txt on this Mac"))
-        menu.addItem(submenu("Learning", learnMenu))
-
-        menu.addItem(item("Teach a word…", #selector(teachWord)))
-        menu.addItem(item("Edit dictionary…", #selector(editDictionary)))
-        menu.addItem(item("Edit snippets…", #selector(editSnippets)))
-        menu.addItem(item("Open history", #selector(openHistory)))
-
-        let teamMenu = NSMenu()
-        if let team = settings.teamFolderURL {
-            teamMenu.addItem(info("Folder: \(team.path.replacingOccurrences(of: Paths.home.path, with: "~"))"))
-            teamMenu.addItem(item("Open team folder", #selector(openTeamFolder)))
-            teamMenu.addItem(item("Choose a different folder…", #selector(chooseTeamFolder)))
-            teamMenu.addItem(item("Stop using the team folder", #selector(clearTeamFolder)))
-            teamMenu.addItem(.separator())
-            let share = item("Share my word counts with the team", #selector(toggleShareUsage))
-            share.state = settings.shareUsage ? .on : .off
-            teamMenu.addItem(share)
-            let usage = TeamFolder.teamUsage()
-            if !usage.isEmpty {
-                teamMenu.addItem(.separator())
-                for (name, today, total) in usage {
-                    teamMenu.addItem(info("\(name): \(f.string(from: NSNumber(value: today)) ?? "0") today · \(f.string(from: NSNumber(value: total)) ?? "0") total"))
-                }
+        let transforms = ModeStore.load().transforms
+        if !transforms.isEmpty {
+            let sub = NSMenu()
+            for t in transforms {
+                let it = item(t.name, #selector(runTransformItem(_:)))
+                it.representedObject = t.id
+                sub.addItem(it)
             }
-        } else {
-            teamMenu.addItem(info("Share a dictionary, snippets and styles with your team"))
-            teamMenu.addItem(info("Pick any folder everyone syncs: iCloud Drive, Dropbox, the NAS"))
-            teamMenu.addItem(item("Choose team folder…", #selector(chooseTeamFolder)))
+            sub.addItem(.separator())
+            sub.addItem(info("Select text in any app first"))
+            let top = NSMenuItem(title: "Rewrite selected text", action: nil, keyEquivalent: "")
+            if let img = NSImage(systemSymbolName: "wand.and.stars", accessibilityDescription: nil) { top.image = img }
+            top.submenu = sub
+            menu.addItem(top)
         }
-        menu.addItem(submenu("Team", teamMenu))
-        menu.addItem(item("Connect to Claude Code (copies the command)", #selector(copyMCPCommand)))
         menu.addItem(.separator())
+        menu.addItem(item("Settings…", #selector(openSettingsPage), key: ",", symbol: "gearshape"))
 
         if AVCaptureDevice.authorizationStatus(for: .audio) != .authorized {
-            menu.addItem(item("Allow microphone…", #selector(openMicSettings)))
+            menu.addItem(item("Allow microphone…", #selector(openMicSettings), symbol: "mic"))
         }
         if !AXIsProcessTrusted() {
-            menu.addItem(item("Allow typing into apps (Accessibility)…", #selector(openAccessibilitySettings)))
+            menu.addItem(item("Allow typing into apps…", #selector(openAccessibilitySettings), symbol: "keyboard"))
         }
-        let login = item("Open at login", #selector(toggleLogin))
-        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        menu.addItem(login)
         menu.addItem(.separator())
         menu.addItem(item("Quit FreeFlow", #selector(quit), key: "q"))
     }
@@ -680,16 +678,196 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return it
     }
 
-    private func item(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
+    private func item(_ title: String, _ action: Selector, key: String = "", symbol: String? = nil) -> NSMenuItem {
         let it = NSMenuItem(title: title, action: action, keyEquivalent: key)
         it.target = self
+        if let name = symbol, let img = NSImage(systemSymbolName: name, accessibilityDescription: nil) { it.image = img }
         return it
     }
 
-    private func submenu(_ title: String, _ menu: NSMenu) -> NSMenuItem {
-        let it = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        it.submenu = menu
-        return it
+    // MARK: - Notes from files and summaries
+
+    /// One piece of audio through the speech engine, for meeting notes and files. Uses the language and dictionary you set.
+    private func transcribeForNotes(_ url: URL, _ done: @escaping (Result<String, Error>) -> Void) {
+        let p = Personalization.load()
+        let lang = settings.language.rawValue
+        let prompt = lang == Language.mixed.rawValue ? p.vocab.promptMixed : p.vocab.prompt
+        server.transcribe(url, language: lang, prompt: prompt, completion: done)
+    }
+
+    private func startFile(_ url: URL) {
+        files.start(url) { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .success(let note):
+                self.overlay.flash("Written down · \(note.deletingPathExtension().lastPathComponent)", seconds: 4)
+                self.summarize(note, quiet: true)
+            case .failure(let e):
+                self.log("file: \(e.localizedDescription)")
+                self.overlay.flash(e.localizedDescription, seconds: 6)
+            }
+        }
+    }
+
+    /// Adds a summary to a note. When it runs by itself (`quiet`), a missing AI or a very short note is not worth a message.
+    private func summarize(_ url: URL, quiet: Bool) {
+        summarizer.summarize(url) { [weak self] reason in
+            guard let self = self else { return }
+            if let r = reason {
+                if !quiet { self.overlay.flash("No summary · \(r)", seconds: 4) }
+            } else {
+                self.overlay.flash("Summary added to the notes", seconds: 3)
+            }
+        }
+    }
+
+    // MARK: - The window
+
+    @objc private func runTransformItem(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String, let t = ModeStore.load().transforms.first(where: { $0.id == id }) else { return }
+        runTransform(t)
+    }
+
+    /// Applies a saved prompt to the text selected in the app in front, and puts the result in its place.
+    private func runTransform(_ t: Transform) {
+        guard ai.cachedAvailable || ai.isAvailable() else { return overlay.flash("Rewrites need the local AI (start Ollama)", seconds: 3) }
+        Inserter.readFocus { [weak self] focus in
+            guard let self = self else { return }
+            guard !focus.selection.isEmpty else { return self.overlay.flash("Select some text first, then choose \(t.name)", seconds: 3) }
+            self.overlay.showTranscribing(label: "\(t.name)…")
+            self.ai.command(t.prompt, selection: focus.selection, context: "") { result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(let text) where !text.isEmpty:
+                        self.log("transform \(t.name): \(TextCleaner.wordCount(focus.selection)) words in, \(TextCleaner.wordCount(text)) out")
+                        if focus.editable, AXIsProcessTrusted() {
+                            Inserter.paste(text) { self.overlay.flash("\(t.name) · done", seconds: 1.5) }
+                        } else {
+                            Inserter.copy(text)
+                            self.overlay.flash("\(t.name) · copied, press ⌘V", seconds: 3)
+                        }
+                    case .success:
+                        self.overlay.flash("The AI returned nothing", seconds: 2)
+                    case .failure(let e):
+                        self.overlay.flash("\(t.name) failed · \(e.localizedDescription)", seconds: 3)
+                    }
+                }
+            }
+        }
+    }
+
+    @objc private func openHome() { openStudio(.home) }
+    @objc private func startMeetingNotes() { meetings.startNow() }
+    @objc private func stopMeetingNotes() { meetings.stop() }
+    @objc private func openSettingsPage() { openStudio(nil); studio?.model.openSettings() }
+
+    private func openStudio(_ page: StudioModel.Page?) {
+        ai.refreshAvailability()
+        if studio == nil { studio = StudioWindowController(bridge: bridge) }
+        studio?.show(page: page)
+        settings.seenHome = true
+    }
+
+    /// Lets the window change settings and ask for things without knowing how the app works inside.
+    private func wireBridge() {
+        bridge.workdayChanged = { [weak self] in
+            guard let self = self else { return }
+            if self.settings.workdayOn { self.workday.start() } else { self.workday.stop() }
+        }
+        bridge.hotkeysChanged = { [weak self] in self?.installHotkeys() }
+        bridge.engineChosen = { [weak self] e in self?.chooseEngine(e) }
+        bridge.cleanupChanged = { [weak self] in
+            guard let self = self else { return }
+            self.aiNoted = false
+            if self.settings.cleanupLevel == .medium { self.ai.warm() }
+        }
+        bridge.commandModeChanged = { [weak self] in
+            guard let self = self else { return }
+            self.installHotkeys()
+            if self.settings.commandMode { self.ai.warm() }
+        }
+        bridge.idleBarChanged = { [weak self] in self?.overlay.idleBarChanged() }
+        bridge.toggleLogin = { [weak self] in self?.toggleLogin() }
+        bridge.correctLast = { [weak self] in self?.correctLast() }
+        bridge.forgetLearned = { [weak self] in self?.forgetLearned() }
+        bridge.chooseTeamFolder = { [weak self] in self?.chooseTeamFolder() }
+        bridge.clearTeamFolder = { [weak self] in self?.clearTeamFolder() }
+        bridge.copyMCP = { [weak self] in self?.copyMCPCommand() }
+        bridge.copyMCPConfig = { [weak self] in self?.copyMCPConfig() }
+        bridge.allowMic = { [weak self] in self?.openMicSettings() }
+        bridge.allowAccessibility = { [weak self] in self?.openAccessibilitySettings() }
+        bridge.showTakes = { [weak self] in self?.showTakes() }
+        bridge.deleteTakes = { [weak self] in self?.deleteTakes() }
+        bridge.editStyles = { [weak self] in self?.editStyles() }
+        bridge.startMeeting = { [weak self] in self?.meetings.startNow() }
+        bridge.stopMeeting = { [weak self] in self?.meetings.stop() }
+        bridge.openMeetings = {
+            try? FileManager.default.createDirectory(at: Paths.meetings, withIntermediateDirectories: true)
+            NSWorkspace.shared.open(Paths.meetings)
+        }
+        bridge.allowScreenAudio = {
+            _ = CGRequestScreenCaptureAccess()
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+        }
+        bridge.meetingNow = { [weak self] in self?.meetings.now }
+        bridge.transcribeFile = { [weak self] url in self?.startFile(url) }
+        bridge.fileJob = { [weak self] in self?.files.job }
+        bridge.summarizeNote = { [weak self] url in self?.summarize(url, quiet: false) }
+        bridge.summarizing = { [weak self] in self?.summarizer.running ?? [] }
+        bridge.status = { [weak self] in self?.statusLine() ?? ("Starting…", false) }
+        bridge.aiReady = { [weak self] in self?.ai.cachedAvailable ?? false }
+        bridge.installingQwen = { [weak self] in self?.installingQwen ?? false }
+    }
+
+    /// A menu-bar app has no menu bar of its own; this gives its window the usual ⌘C, ⌘V, ⌘W and ⌘Q.
+    private func installMainMenu() {
+        let main = NSMenu()
+
+        let appItem = NSMenuItem()
+        main.addItem(appItem)
+        let appMenu = NSMenu()
+        let prefs = NSMenuItem(title: "Settings…", action: #selector(openSettingsPage), keyEquivalent: ",")
+        prefs.target = self
+        appMenu.addItem(prefs)
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Hide FreeFlow", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        let quitItem = NSMenuItem(title: "Quit FreeFlow", action: #selector(quit), keyEquivalent: "q")
+        quitItem.target = self
+        appMenu.addItem(quitItem)
+        appItem.submenu = appMenu
+
+        let editItem = NSMenuItem()
+        main.addItem(editItem)
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = edit
+
+        let windowItem = NSMenuItem()
+        main.addItem(windowItem)
+        let win = NSMenu(title: "Window")
+        win.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        win.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowItem.submenu = win
+        NSApp.windowsMenu = win
+
+        NSApp.mainMenu = main
+    }
+
+    /// Switches the speech engine; picking Qwen the first time installs it.
+    private func chooseEngine(_ e: SpeechEngine) {
+        guard e != settings.engine || server.lastError != nil else { return }
+        if e == .qwen, !WhisperServer.qwenInstalled {
+            return installQwen()
+        }
+        settings.engine = e
+        server.switchTo(e)
+        overlay.flash("Speech engine: \(e.short)", seconds: 2)
     }
 
     @objc private func copyLast() {
@@ -700,34 +878,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let o = lastOutcome else { return }
         Inserter.copy(o.raw)
         overlay.flash("Original words copied · paste with ⌘V", seconds: 3)
-    }
-
-    @objc private func pickKey(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let k = TalkKey(rawValue: raw) else { return }
-        settings.talkKey = k
-        if settings.commandKey == k {
-            settings.commandKey = TalkKey.allCases.first { $0 != k } ?? .rightControl
-        }
-        installHotkeys()
-    }
-
-    @objc private func pickCommandKey(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let k = TalkKey(rawValue: raw) else { return }
-        settings.commandKey = k
-        installHotkeys()
-    }
-
-    @objc private func toggleTapMode() { settings.tapToToggle.toggle() }
-
-    @objc private func pickEngine(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let e = SpeechEngine(rawValue: raw),
-              e != settings.engine || server.lastError != nil else { return }
-        if e == .qwen, !WhisperServer.qwenInstalled {
-            return installQwen()
-        }
-        settings.engine = e
-        server.switchTo(e)
-        overlay.flash("Speech engine: \(e.short)", seconds: 2)
     }
 
     /// Runs scripts/install-qwen-engine.sh (bundled) once: a private Python env plus the model download.
@@ -767,8 +917,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func toggleKeepTakes() { settings.keepTakes.toggle() }
-
     @objc private func showTakes() {
         try? FileManager.default.createDirectory(at: Paths.takes, withIntermediateDirectories: true)
         NSWorkspace.shared.open(Paths.takes)
@@ -785,49 +933,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         try? FileManager.default.removeItem(at: Paths.takes)
         overlay.flash("Saved recordings deleted", seconds: 2)
     }
-
-    @objc private func toggleCommandMode() {
-        settings.commandMode.toggle()
-        installHotkeys()
-        if settings.commandMode { ai.warm() }
-    }
-
-    @objc private func pickLanguage(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let l = Language(rawValue: raw) else { return }
-        settings.language = l
-    }
-
-    @objc private func pickCleanup(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let c = CleanupLevel(rawValue: raw) else { return }
-        settings.cleanupLevel = c
-        aiNoted = false
-        if c == .medium { ai.warm() }
-    }
-
-    @objc private func toggleFillers() { settings.removeFillers.toggle() }
-    @objc private func toggleSounds() { settings.sounds.toggle() }
-    @objc private func toggleShareUsage() {
-        settings.shareUsage.toggle()
-        if settings.shareUsage { TeamFolder.shareUsage() }
-    }
-
-    @objc private func teachWord() {
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = "Teach FreeFlow a word"
-        alert.informativeText = "A name, product or term Whisper keeps getting wrong. For a forced swap write  wrong => right"
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        field.placeholderString = "Ranklore   or   Rank Lore => Ranklore"
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Add")
-        alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = field
-        if alert.runModal() == .alertFirstButtonReturn {
-            Vocabulary.add(field.stringValue)
-        }
-    }
-
-    @objc private func toggleLearning() { settings.learnFromFixes.toggle() }
 
     private func announceLearned(_ pairs: [Learning.Pair]) {
         let shown = pairs.prefix(2).map { "\($0.wrong) → \($0.right)" }.joined(separator: ", ")
@@ -870,11 +975,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func showLearned() {
-        if !FileManager.default.fileExists(atPath: Paths.learned.path) { LearnedFile().save() }
-        NSWorkspace.shared.open(Paths.learned)
-    }
-
     @objc private func forgetLearned() {
         let f = LearnedFile.load()
         NSApp.activate(ignoringOtherApps: true)
@@ -888,26 +988,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func editDictionary() {
-        Vocabulary.ensureFile()
-        NSWorkspace.shared.open(Paths.dictionary)
-    }
-
-    @objc private func editSnippets() {
-        _ = Personalization.load()
-        NSWorkspace.shared.open(Paths.snippets)
-    }
-
     @objc private func editStyles() {
         _ = Personalization.load()
         NSWorkspace.shared.open(Paths.styles)
-    }
-
-    @objc private func openHistory() {
-        if !FileManager.default.fileExists(atPath: Paths.history.path) {
-            FileManager.default.createFile(atPath: Paths.history.path, contents: nil)
-        }
-        NSWorkspace.shared.open(Paths.history)
     }
 
     @objc private func chooseTeamFolder() {
@@ -925,12 +1008,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func openTeamFolder() {
-        guard let url = settings.teamFolderURL else { return }
-        TeamFolder.prepare(url)
-        NSWorkspace.shared.open(url)
-    }
-
     @objc private func clearTeamFolder() {
         settings.teamFolder = nil
         settings.shareUsage = false
@@ -938,8 +1015,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func copyMCPCommand() {
         let script = (Bundle.main.resourcePath ?? "/Applications/FreeFlow.app/Contents/Resources") + "/freeflow-mcp.py"
+        settings.mcpCopied = true
         Inserter.copy("claude mcp add --scope user freeflow -- /usr/bin/env python3 \"\(script)\"")
         overlay.flash("Command copied · paste it in a terminal, then Claude can search your dictations", seconds: 4)
+    }
+
+    /// The same server as a JSON entry, for Claude Desktop, Cursor and other apps that read an mcpServers list.
+    private func copyMCPConfig() {
+        let script = (Bundle.main.resourcePath ?? "/Applications/FreeFlow.app/Contents/Resources") + "/freeflow-mcp.py"
+        let entry: [String: Any] = ["mcpServers": ["freeflow": ["command": "/usr/bin/env", "args": ["python3", script]]]]
+        if let data = try? JSONSerialization.data(withJSONObject: entry, options: [.prettyPrinted, .sortedKeys]),
+           let text = String(data: data, encoding: .utf8) {
+            Inserter.copy(text)
+            overlay.flash("MCP config copied · add it to your app's MCP settings", seconds: 3.5)
+        }
     }
 
     @objc private func openMicSettings() {
@@ -978,7 +1067,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         f.dateFormat = "yyyy-MM-dd HH:mm"
         append(Paths.history, "\(f.string(from: Date()))  \(o.text.replacingOccurrences(of: "\n", with: " ⏎ "))\n")
         let iso = ISO8601DateFormatter().string(from: Date())
-        let record: [String: Any] = ["t": iso, "app": o.app ?? "", "mode": o.mode, "raw": o.raw, "text": o.text]
+        var record: [String: Any] = ["t": iso, "app": o.app ?? "", "mode": o.mode, "raw": o.raw, "text": o.text]
+        if o.secs > 0 { record["secs"] = (o.secs * 10).rounded() / 10 }
         if let data = try? JSONSerialization.data(withJSONObject: record), let line = String(data: data, encoding: .utf8) {
             append(Paths.historyJSON, line + "\n")
         }

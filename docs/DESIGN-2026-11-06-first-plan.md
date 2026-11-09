@@ -1,6 +1,6 @@
-# FreeFlow: Wispr Flow parity for personal and team use (design, 6 Nov 2026)
+# FreeFlow: first plan for personal and team use (design, 6 Nov 2026)
 
-Goal: FreeFlow does what Wispr Flow does for dictation, for Jamie and his team, with nothing leaving the Mac unless the user turns a cloud option on. Wispr's Notetaker (meeting recording) is out of scope.
+Goal: offline dictation for Jamie and his team, with nothing leaving the Mac unless the user turns a cloud option on. The plan started from a feature comparison with an existing dictation app (below), then went its own way; meeting notes, which the comparison left out, were added later.
 
 ## What Wispr Flow has (verified on wisprflow.ai/features, docs.wisprflow.ai, 6 Nov 2026) and what FreeFlow does
 

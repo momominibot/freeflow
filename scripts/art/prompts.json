@@ -1,0 +1,14 @@
+{
+  "style": "Soft watercolour kawaii illustration in a pearly pastel palette of lilac, blush pink and peach with a gentle white glow, like a children's storybook. Rounded cute shapes, glossy highlights, a few tiny sparkles. One scene, centred, with generous empty margin, on a plain flat very pale lavender background (#F8F3FB). No text, no letters, no numbers, no border, no frame, no cast shadow on the ground.",
+  "mascot": "The FreeFlow mascot is a round pearly speech-bubble creature with a small rounded tail, an iridescent lilac to blush to peach body, big glossy deep-violet eyes with small white sparkles, pink blush cheeks and a tiny smile.",
+  "images": [
+    {"name": "hello",     "seed": 11, "scene": "The mascot waves hello with one tiny arm. A small glowing microphone floats beside it."},
+    {"name": "words",     "seed": 12, "scene": "The mascot reads a small open book with sparkles rising from the pages. Two more little books are stacked beside it."},
+    {"name": "snippets",  "seed": 13, "scene": "The mascot holds a small folded note with a little star sticker on it. A few tiny paper notes float around it."},
+    {"name": "modes",     "seed": 14, "scene": "The mascot holds a little paintbrush next to a soft pastel colour palette with five round dots of colour."},
+    {"name": "meetings",  "seed": 15, "scene": "Two mascots, one lilac and one peach, sit side by side, each with a small empty speech bubble above it, as if chatting. A tiny round clock floats between them."},
+    {"name": "files",     "seed": 16, "scene": "The mascot hugs a cute round cassette tape that has a glowing soft sound wave line across it."},
+    {"name": "learning",  "seed": 17, "scene": "The mascot waters a tiny green sprout growing in a little pastel pot, with sparkles around the sprout."},
+    {"name": "sleepy",    "seed": 18, "scene": "The mascot sleeps peacefully curled up on a small round pillow, eyes closed with a smile, with tiny stars floating above it."}
+  ]
+}

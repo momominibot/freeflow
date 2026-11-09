@@ -1,6 +1,6 @@
 # FreeFlow
 
-Free, offline dictation for macOS that does what Wispr Flow does, for you and your team. Hold a key, talk, let go, and clean written text appears wherever your cursor is. No account, no word limit, no subscription. Audio and text never leave the Mac.
+Free, offline dictation for macOS, made for you and your team. Hold a key, talk, let go, and clean written text appears wherever your cursor is. It also writes down your calls, learns your words and, if you let it, notices the routines in your day and sets up the boring ones for you. No account, no word limit, no subscription. Audio and text never leave the Mac.
 
 ## Use it
 
@@ -17,11 +17,64 @@ Free, offline dictation for macOS that does what Wispr Flow does, for you and yo
 
 Sessions can run 20 minutes. A tap under 0.3 s does nothing, so an accidental tap is harmless.
 
-### Menu bar
+### The look
 
-Talk key (right ⌥, Fn, right ⌘, right ⌃) · Command Mode key · Language (English, auto, Chinese, Malay, Indonesian, Tamil, Hindi, Japanese, Korean, Spanish, French, German, Vietnamese, Thai) · Auto cleanup level · filler removal · sounds · Learning (learn from my corrections, correct my last dictation, show or forget what it learned) · Teach a word · dictionary, snippets, styles · history · Team · Connect to Claude Code · usage (words today, all time, top apps) · Undo AI edit.
+FreeFlow wears the Rhythme theme: lavender paper, plum ink, Newsreader headings and Manrope text (both open fonts, bundled in `assets/fonts`).
 
-### Auto cleanup (like Wispr's)
+- **Light and dark royal purple.** The window has two looks: the lavender paper above, and the Rhythme night room, deep royal purple with lilac ink. The moon or sun button at the top right switches between them. Settings › General › Appearance also offers **Match my Mac**, which is the default. Every page colour has a light and a dark value in `Sources/Theme.swift` (`RT`, built with `Color.dyn`), so a new view that uses `RT.*` follows automatically. Never use `Color.white` or a hex for a surface. The painted pictures are drawn for pale paper, so in dark they sit on a pearly tile. The floating bar is night plum in both, so it reads on any wallpaper.
+
+- **The bar.** A small plum pill at the bottom of the screen. At rest it is a tiny sleepy face (switch it off in Settings). While you talk it shows a face whose mouth moves with your voice and live bars. While it works the dots bounce. Short messages ("Learned: Ranklor → Ranklore") appear in the same pill.
+- **The window.** Click the face in the menu bar › **Open FreeFlow**. The sidebar has nine pages: **Home** (a greeting, total words, words per minute and day streak in a side panel, your recent dictations with search, a "show what I said" switch for the tidied ones, and export to Markdown, text or JSON), **Meetings** (call and file notes), **Stats** (words this week, a day average, the streak, a rough time saved, a 14-day bar chart, the apps you talk in most), **Words** and **Phrases** (tabs All / Personal / Learned / Shared with team, search, A to Z or newest first, import from a text, CSV or JSON file or the clipboard, export, a dismissible banner), **Tone** (your own writing instructions), **Rewrites**, **Jots** and **Workday** (see below). At the bottom: **Share with your team**, **Settings** and **Help**. **Settings** opens as a dialog with its own sidebar: General (shortcuts, microphone, appearance, languages, tidy-up, speech engine), System (launch at login, the bar, sounds, permissions), Calls (call detection), MCP (copy the Claude Code command or a JSON entry for Claude Desktop and Cursor), Account (your name), Team and Data and Privacy (keep recordings, learning, open the data folder, delete history). The sidebar can be hidden with the button at the top left, and the account button at the top right opens Account. A small **Getting started** list under the pages (try meeting notes, hear the other people, write down a recording, connect your AI tools) ticks itself off and goes away when done. The window opens by itself the first time.
+- **Jots.** Start a dictation with "note to self" (or "add this to my scratchpad") and the rest is saved as a note in `scratchpad/` instead of being typed into the app in front. Write, edit, copy and delete notes on the Jots page. Ordinary sentences that merely mention a scratchpad are never taken.
+- **Team and Help.** Settings › Team picks the shared folder, copies an invite note (nothing is sent), and shows who shares their word counts. Help has the quick start, fixes for the usual problems (including the `sudo killall coreaudiod` one) and buttons for the log and data folders.
+- **The menu.** Short on purpose: status, Open FreeFlow, Copy last result, Undo AI edit, Correct my last dictation, Settings, Quit. Permission fixes appear only when something is missing.
+
+To check the look without showing anything on screen: `FreeFlow.app/Contents/MacOS/FreeFlow --render-ui <folder>` writes a PNG of every page and every state of the bar, light in the folder and dark in `<folder>/dark`. `FF_SHOT_WIDTH=860` draws them at the narrowest the window can be.
+
+### Tone and Rewrites
+
+- **Tone** (window › Tone): your own writing instruction for the AI clean-up, such as "Warm and brief. Use my first name." Give a mode to chosen apps, or switch one on for every other app. An app's own mode always wins. It tunes tone; the guard that rejects a rewrite that lost your words still applies.
+- **Rewrites** (window › Rewrites): saved prompts you run on text you have selected in any app, from the menu bar menu › **Rewrite selected text**. Five come ready (shorter, fix grammar only, friendlier, more formal, bullet points); add your own. The result replaces the selection. Needs the local AI.
+
+Both live in `modes.json` in the support folder.
+
+### The pictures
+
+Eight painted pictures of the mascot (waving with a microphone, reading, holding a note, with a paintbrush, chatting, hugging a cassette, watering a sprout, sleeping) show in the empty spots and headers of the window. They were made once with Seedream 5 pro in Rhythme's watercolour style by `scripts/art/run_art.py` (one guarded run, prompts in `scripts/art/prompts.json`), then `scripts/art/keypaper.py` took the paper backdrop out. The finished `assets/art/*.webp` are bundled by `build.sh`; the 1.6 MB originals in `assets/art/raw/` stay out of git. A missing picture falls back to the little face.
+
+### The logo
+
+A painted speech bubble in Rhythme's pearly lilac, blush and peach, with a kawaii face and a glowing sound wave across it, on a rich lilac app-icon tile. The bubble came from the second round of Seedream pictures (`scripts/art/prompts-logo.json`, four candidates, the wave one won), keyed with `scripts/art/keypaper.py` into `assets/brand/logo-bubble.png`. `scripts/make_logo.py` composes the tile, mark and lockup from it (without a bubble file it falls back to `mascot.png` plus a drawn wave) and writes `assets/brand/` (logo-mark, logo-icon, logo-lockup, AppIcon.icns); `build.sh` bundles it. `scripts/make_logo_drawn.py` is the earlier version that draws the bubble in code.
+
+### Meeting notes
+
+FreeFlow watches which app is using the microphone (macOS 14.2 or later). When Zoom, Teams, FaceTime, Webex, a Slack huddle, or Google Meet / Teams / Zoom in Chrome, Edge or Arc starts a call, a card appears in the corner:
+
+- **Start by itself** (default): a 10-second countdown, then notes start. **Not now** skips that call; pointing at the card pauses the countdown.
+- **Ask me**: the card waits for you to tap **Take notes**.
+- **Off**: nothing is watched. **Take meeting notes now** in the menu still works, for a call or a talk in the room.
+
+While it runs, the bar shows "Meeting notes · 12:41". Audio is cut into 30-second pieces, each piece is written down by the same local engine, and the audio is deleted right away. The notes land in `~/Library/Application Support/FreeFlow/meetings/` as plain Markdown, with **You** and **Others** on separate lines (the others come from what the Mac plays, which needs *Screen & System Audio Recording*; without it only your side is written). If your microphone picks up the speakers, a line that repeats what the others just said is dropped. Notes stop about a minute after the call ends, or after 2 hours. The **Meetings** page lists them with Copy, Open and Delete.
+
+**Summaries.** When a meeting ends, the local AI (the same Ollama model as clean-up) writes a summary, the decisions and the action items at the top of the note, and says it wrote them. Long meetings are noted in parts and merged, so nothing is cut off. It only uses what was said. Press **Summarise** on any note that has none. Needs Ollama; if it is not running, the note simply has no summary.
+
+**Files.** Drop an audio or video file on the Meetings page (or **Choose file…**). ffmpeg (`brew install ffmpeg`) turns it into one-minute pieces, each piece is written down by the same engine, with minute stamps, and a summary follows. Quiet pieces are skipped. The result is a note like any other, marked as a recording.
+
+Tell the others you are taking notes. Not done yet: a live transcript, joining from the calendar, speaker names beyond You and Others, Safari calls.
+
+### Workday: notice routines, set up the boring ones
+
+Off until you switch it on (Workday page). While on, FreeFlow looks at the front window every few seconds and keeps the app, a cleaned-up window title and the time: **no screenshots, no text from your screen**, nothing sent anywhere, deleted after 14 days. Password managers and private browser windows are never recorded; emails, links, keys and long numbers in titles are swapped for tags before anything is written; `workday/exclude.txt` hides any title that contains a word you list; the menu says when it is on; **Forget everything** deletes it.
+
+From the notes (and from your dictations) it finds three kinds of routine and offers an action for each:
+- **Apps you open first thing, at the same time, most days** → a scheduled task that opens them a few minutes earlier. **Add to my schedule** writes a small script and a macOS schedule file (`launchd`, the same job as cron, so it can open apps in your session; the cron form is shown). **Run a check** shows what it would open without opening anything. **Remove** deletes both. It only opens apps.
+- **Back and forth between the same apps, again and again** (Chrome → Sheets → Chrome, 14 times) → a brief for an agent. **Copy brief** works with any agent; **Send to Hermes** appears when `~/.local/bin/fleet-bridge` exists and hands the card to the Hermes fleet. The brief names apps and counts only, never window titles.
+- **A sentence you keep dictating** (the instructions you give your AI every time) → **Make a phrase**: a spoken cue that types it for you.
+
+The MCP tool `workday_summary` gives an agent the minutes per app per day (names only). Switching the notes off stops recording at once.
+
+
+### Auto cleanup
 
 | Level | What you get |
 |---|---|
@@ -48,12 +101,12 @@ How it works:
 
 ### Dictionary and snippets
 
-- `dictionary.txt`: one word or name per line teaches Whisper the spelling; `wrong => right` forces a swap. Or use **Teach a word…** in the menu.
+- `dictionary.txt`: one word or name per line teaches Whisper the spelling; `wrong => right` forces a swap. Or add it in **Dictionary** in the window.
 - `snippets.txt`: `cue => expansion`, `\n` for a new line. Cues up to 60 characters, expansions up to 4,000. A dictation that is only the cue becomes the expansion exactly; a cue inside a sentence is replaced in place.
 
 ### Team
 
-Pick any folder your whole team syncs (iCloud Drive, Dropbox, the NAS, a git checkout): **menu bar › Team › Choose team folder**. FreeFlow keeps three files there and reads them on every dictation:
+Pick any folder your whole team syncs (iCloud Drive, Dropbox, the NAS, a git checkout): **Team › Choose…** (also under Settings). FreeFlow keeps three files there and reads them on every dictation:
 
 | File | Holds |
 |---|---|
@@ -61,21 +114,21 @@ Pick any folder your whole team syncs (iCloud Drive, Dropbox, the NAS, a git che
 | `team-snippets.txt` | Shared cues: company address, support sign-off, booking link |
 | `team-styles.txt` | Shared tone per app |
 
-A person's own entry wins when it clashes with a team entry, the same rule Wispr uses. `team-example/` in this repo is a starter set. Optional: **Share my word counts with the team** writes `usage/<name>.json` into the folder so the Team menu shows everyone's totals; it is off by default.
+A person's own entry wins when it clashes with a team entry, so a team can share a base and everyone keeps their own overrides. `team-example/` in this repo is a starter set. Optional: **Share my word counts with the team** writes `usage/<name>.json` into the folder so everyone's totals can be shown; it is off by default.
 
 ### Connect to Claude Code (MCP)
 
-Like Wispr's connector, but local and for your dictations. **Menu › Connect to Claude Code** copies the command:
+Lets any agent that speaks MCP read your dictations and, if you switch the workday notes on, how your time went (app names and minutes only). **Settings › Team and Claude Code › Copy command** copies the command:
 
 ```bash
 claude mcp add --scope user freeflow -- /usr/bin/env python3 "/Applications/FreeFlow.app/Contents/Resources/freeflow-mcp.py"
 ```
 
-Tools: `search_history`, `recent_dictations`, `get_dictionary`, `get_snippets`, `get_usage`, `add_dictionary_word`, `add_snippet`. Standard-library Python, stdio, nothing leaves the Mac. Works with any MCP client that can run a local command.
+Tools: `search_history`, `recent_dictations`, `get_dictionary`, `get_snippets`, `get_usage`, `workday_summary`, `add_dictionary_word`, `add_snippet`. Standard-library Python, stdio, nothing leaves the Mac. Works with any MCP client that can run a local command.
 
 ## Speech engines (Whisper or Qwen3-ASR)
 
-Menu bar › **Speech engine** switches between two engines. Both run on this Mac and nothing is uploaded.
+**Settings › Speech engine** switches between two engines. Both run on this Mac and nothing is uploaded.
 
 - **Whisper large-v3-turbo** (default, MIT). Fast to start, ships with the install.
 - **Qwen3-ASR 1.7B** (Apache-2.0, run with `mlx-qwen3-asr`). Lower word error on the Open ASR Leaderboard (5.76 against 7.83 for Whisper turbo, English average). Picking it the first time downloads about 5 GB and builds a private Python environment in `~/Library/Application Support/FreeFlow/engines/qwen` (script: `scripts/install-qwen-engine.sh`). Your dictionary is passed to it as context, so names are spelled your way.
@@ -84,7 +137,7 @@ To test on your own voice instead of trusting benchmarks: tick **Keep my recordi
 
     ~/Library/Application\ Support/FreeFlow/engines/qwen/venv/bin/python scripts/compare-engines.py -o report.md
 
-It runs every kept take through both engines side by side. For a ready-made test, read the 30 sentences in `docs/read-aloud-script.md` (English, Singapore English and Chinese mixed) and add `--script docs/read-aloud-script.txt`: the right answers are then known and both engines are scored per English word and Chinese character. Add `"truth": "what you actually said"` to a take's `.json` and it scores word error for both. **Delete saved recordings** in the same menu removes them all.
+It runs every kept take through both engines side by side. For a ready-made test, read the 30 sentences in `docs/read-aloud-script.md` (English, Singapore English and Chinese mixed) and add `--script docs/read-aloud-script.txt`: the right answers are then known and both engines are scored per English word and Chinese character. Add `"truth": "what you actually said"` to a take's `.json` and it scores word error for both. **Delete recordings** in the same place removes them all.
 
 **Mixed English and Chinese.** Pick Language › *English + Chinese (mixed)*. Whisper then detects per recording and the Qwen engine is told "Chinese", which keeps English words as spoken (left on auto-detect it once translated the Chinese half of a sentence into English). The clean-up AI is told never to translate, and its safety check now rejects any rewrite that loses the Chinese characters or turns English into Chinese. Tested on computer-generated speech only; real Singapore speech is the next test (use "Keep my recordings").
 
@@ -95,7 +148,7 @@ The Qwen package lists English, Chinese, Arabic, Dutch, French, German, Hindi, I
 1. Unzip `FreeFlow-<version>.zip`.
 2. Run `./install.sh` (adds `--with-ai` to also install Ollama and the 7.6 GB AI model). It installs whisper.cpp with Homebrew, downloads the 574 MB speech model and verifies its checksum, copies the app to /Applications and clears the download flag so macOS opens it.
 3. On first launch allow **Microphone** and **Accessibility**. Without Accessibility FreeFlow still transcribes and copies to the clipboard, but cannot press ⌘V for you.
-4. Menu bar › Team › Choose team folder.
+4. Open FreeFlow › Settings › Team and Claude Code › Choose…
 
 The app is signed with a development certificate, not a notarised Developer ID, which is why step 2 clears the quarantine flag. Notarising needs a paid Developer ID; `build.sh` already prefers one when it exists.
 
@@ -120,19 +173,41 @@ curl -L -o ggml-large-v3-turbo-q5_0.bin https://huggingface.co/ggerganov/whisper
 - `WhisperServer.swift` runs `whisper-server` (Homebrew `whisper-cpp`) on `127.0.0.1:8178` so the model stays loaded on the GPU. A 10 s clip transcribes in about 0.3 s.
 - `Rewriter.swift` talks to Ollama on `127.0.0.1:11434` (`think: false`, temperature 0, keep-alive 60 min, warmed at launch). A 40-word clean-up takes about 0.8 s. See `docs/MEASUREMENTS.md`.
 - `Input.swift`: talk-key and command-key monitors, 16 kHz WAV recorder, paste and ⌘C-with-clipboard-restore, selection reading through Accessibility.
-- `Text.swift`: dictionary, rule-based clean-up, spoken commands. `Snippets.swift`: snippets, styles, the team folder. `Overlay.swift`: the pill. `AppDelegate.swift`: menu bar and the pipeline.
+- `Text.swift`: dictionary, rule-based clean-up, spoken commands. `Snippets.swift`: snippets, styles, the team folder. `Overlay.swift`: the bar. `Theme.swift`: Rhythme colours, fonts, controls. `Studio.swift`: the window and its pages. `AppDelegate.swift`: menu bar and the pipeline.
 - Pipeline per dictation: Whisper → rules (or raw for None) → snippets → spoken commands → AI (Medium only, skipped when a snippet fired or the app's style is plain) → paste in spoken order.
 
 ## Checks
 
+**One command checks everything:** `scripts/smoke.sh` builds, installs, then runs every function and ends with `SMOKE GREEN` or a list of what failed. `scripts/smoke.sh static` needs no app (build, unit checks, scripts, the stored voices, Whisper, the AI, the MCP server, and a picture of every page in light and dark). `scripts/smoke.sh live` drives the installed app: every page, button and setting through Accessibility, then dictation, "note to self", paste, a transform, edit by voice, a meeting with its summary and an audio file, all by speaking through the speakers into the microphone. It needs the speakers up and nobody typing. It saves your history, notes, dictionary, snippets, styles and settings first and puts them back at the end. `SMOKE_NARROW=1` also draws the narrowest window, `SMOKE_QWEN=1` also tries Qwen3-ASR.
+
+### The test voice
+
+The smoke test speaks with a natural local voice (Kokoro-82M, Apache-2.0, no cloud) instead of the robotic macOS `say` voice, so Whisper hears something like a real person: one sentence at a time with breaths between them, an even level, and two speakers for the meeting. The voices FreeFlow keeps are listed in `assets/voices/voices.json`, each with a short alias, what it feels like and what it was used for:
+
+| Alias | Voice | Feel |
+|---|---|---|
+| warm (default) | af_heart | warm, easy, the all-round pick |
+| calm | af_nicole | soft and slow, close to the microphone |
+| bright | af_bella | bright and lively |
+| friendly | af_sarah | friendly, even, clear |
+| narrator | am_michael | steady, a clear narrator |
+| casual | am_adam | casual and relaxed |
+| light | am_liam | light and younger |
+| british-male | bm_daniel | British, measured |
+| british-female | bf_emma | British, clear and polite |
+
+A sample of each is in `assets/voices/samples/`. The model (`kokoro-v1.0.onnx` and `voices-v1.0.bin`, 350 MB) is kept in `~/Library/Application Support/FreeFlow/voices`, outside git. To speak a line: `python scripts/tools/speak.py OUT < lines.tsv` (name, voice or alias, text per line; `||` between speakers). `speak.py --voices` lists all 54 voices in the model, `--samples DIR` renders the kept ones. Its Python lives in FreeFlow too: `~/Library/Application Support/FreeFlow/engines/voice/venv` (126 MB, Python 3.12 with `kokoro-onnx`, `soundfile` and `numpy`). On a new Mac rebuild it with `uv venv --python 3.12 "$HOME/Library/Application Support/FreeFlow/engines/voice/venv"` and `uv pip install --python <that venv>/bin/python kokoro-onnx soundfile`, and copy the two model files into the voices folder (they come from the kokoro-onnx releases). `FF_VOICE_PY` points the test at a different Python.
+
+Individual checks:
+
 ```bash
-build/FreeFlow.app/Contents/MacOS/FreeFlow --test                 # text pipeline, 28 checks
+build/FreeFlow.app/Contents/MacOS/FreeFlow --test                 # text pipeline, meetings, modes, scratchpad and insights checks
 build/FreeFlow.app/Contents/MacOS/FreeFlow --test-ai "um so we should budget 50k actually 75k" formal
 build/FreeFlow.app/Contents/MacOS/FreeFlow --selftest clip.wav [en|auto|zh|...]
 python3 scripts/freeflow-mcp.py --selfcheck
 ```
 
-Live test without a human at the mic: `defaults write com.momominibot.freeflow debugTriggers -bool true`, then `FreeFlow --debug-post down|up|command|lock|paste` while `say` plays through the speakers into the built-in mic. Make sure the target text field has keyboard focus (click in it, or ⌘A) and that nobody is typing: any key press while the key is held cancels the recording.
+Live test without a human at the mic: `defaults write com.momominibot.freeflow debugTriggers -bool true`, then `FreeFlow --debug-post down|up|tap|command|lock|paste` while `say` plays through the speakers into the built-in mic. Make sure the target text field has keyboard focus (click in it, or ⌘A) and that nobody is typing: any key press while the key is held cancels the recording.
 
 ## Lessons that cost time
 
@@ -143,9 +218,14 @@ Live test without a human at the mic: `defaults write com.momominibot.freeflow d
 - Whisper is told the language explicitly because auto-detect on short clips is shaky.
 - The AI once added a "$" that was never spoken; the prompt now forbids adding symbols and the guard rejects rewrites that drift.
 
+## What people ask for
+
+`docs/REDDIT-WISHLIST.md` lists what Reddit users say they want from a dictation app (searched 9 Nov 2026), with what FreeFlow already has and what is next.
+
 ## Not done
 
-- Notetaker (meeting recording), mobile apps, Voice Profile and Perplexity search are Wispr features FreeFlow does not have.
+- Ideas not built yet are in `docs/IDEAS.md` (a stats page with a speaking-speed gauge and streak calendar, tone by category, rewrites that run by themselves after dictation, a meeting list with questions across all your notes, an optional screen-text mode for the workday notes).
+- No mobile app, no calendar connection and no subscription: FreeFlow is a Mac app that keeps everything on the Mac.
 - Learning is lexical (words and swaps). Retraining the speech model on your voice from your kept recordings and corrections is not built; it would be a separate, heavier step.
 - Learning from fixes was tested live against TextEdit and by unit checks, not yet across browsers, Slack or Electron apps; where an app hides its text, use Correct my last dictation.
 - Not tested with a human voice into the physical microphone; tests played speech through the speakers.

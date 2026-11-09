@@ -13,16 +13,21 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 swiftc -O -swift-version 5 -target arm64-apple-macos13.0 Sources/*.swift \
   -o "$APP/Contents/MacOS/FreeFlow" \
-  -framework AppKit -framework AVFoundation -framework ApplicationServices -framework ServiceManagement
+  -framework AppKit -framework SwiftUI -framework AVFoundation -framework ApplicationServices -framework ServiceManagement -framework CoreAudio -framework ScreenCaptureKit
 cp Info.plist "$APP/Contents/"
 cp scripts/freeflow-mcp.py "$APP/Contents/Resources/"
 chmod +x "$APP/Contents/Resources/freeflow-mcp.py"
 cp scripts/qwen_server.py scripts/install-qwen-engine.sh "$APP/Contents/Resources/"
+mkdir -p "$APP/Contents/Resources/Fonts"
+cp assets/fonts/*.ttf assets/fonts/LICENSE.txt "$APP/Contents/Resources/Fonts/"
 chmod +x "$APP/Contents/Resources/install-qwen-engine.sh"
 
-swiftc -O scripts/make_icon.swift -o build/make_icon
-build/make_icon build/AppIcon.iconset
-iconutil -c icns build/AppIcon.iconset -o "$APP/Contents/Resources/AppIcon.icns"
+# The logo and app icon are drawn by scripts/make_logo.py and kept in assets/brand.
+cp assets/brand/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+mkdir -p "$APP/Contents/Resources/Brand"
+cp assets/brand/logo-mark.png "$APP/Contents/Resources/Brand/"
+mkdir -p "$APP/Contents/Resources/Brand/art"
+cp assets/art/*.webp "$APP/Contents/Resources/Brand/art/" 2>/dev/null || true
 
 # A real signing identity keeps macOS permissions across rebuilds; ad-hoc works but resets them.
 IDENTITY=$(security find-identity -v -p codesigning | awk '/Developer ID Application/ {print $2; exit}')
@@ -36,6 +41,8 @@ echo "Text pipeline checks passed"
 if [ "${1:-}" = "install" ]; then
   pkill -x FreeFlow || true
   sleep 0.5
+  pkill -9 -x FreeFlow || true   # an app stuck inside macOS audio ignores the polite request
+  sleep 0.3
   rm -rf /Applications/FreeFlow.app
   ditto "$APP" /Applications/FreeFlow.app
   open /Applications/FreeFlow.app
