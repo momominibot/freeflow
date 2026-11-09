@@ -2,6 +2,8 @@
 
 Free, offline dictation for macOS, made for you and your team. Hold a key, talk, let go, and clean written text appears wherever your cursor is. It also writes down your calls, learns your words and, if you let it, notices the routines in your day and sets up the boring ones for you. No account, no word limit, no subscription. Audio and text never leave the Mac.
 
+There is a first version for the iPhone too, in [`ios/`](ios/README.md): the same clean-up and dictionary, Whisper running on the phone.
+
 ## Use it
 
 | Do this | What happens |
