@@ -16,6 +16,10 @@ paste anywhere. No account and no server. After the speech model has been downlo
   Rewrites (clearer, shorter, rephrase, friendlier, more professional, more confident) use Apple Intelligence on the phone
   (iOS 26 and a supported iPhone; everything else about Polish works without it, and the tab says why rewrites are off).
   Settings › Writing: spelling (British, American, Canadian, Australian, Indian) and "Fix clear slips as I talk".
+- **For AI builders**, under the same Rewrite card: Coding prompt, Step-by-step plan, Bug report, Commit message, Conventional
+  commit, Pull request and Code comment. A rewrite that loses a file name, `--flag`, link, version or number is refused.
+  Spoken code works in every dictation: "camel case user profile card" gives `userProfileCard`, "index dot ts" gives `index.ts`
+  (`docs/AI-BUILDERS.md`).
 - A history (the newest 200), copy, share, and writing down an audio file.
 - The dictionary is `dictionary.txt` in the app's Documents folder, so it shows in the Files app under
   On My iPhone › FreeFlow, and Settings › Dictionary can take the one from the Mac.

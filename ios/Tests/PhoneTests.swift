@@ -147,4 +147,21 @@ final class PhoneTests: XCTestCase {
         XCTAssertLessThan(model.fixableCount, 3)
         XCTAssertFalse(model.text.contains("the the"))
     }
+
+    func testBuilderRewritesKeepFilesAndNamesOrAreRefused() {
+        let notes = "in src/auth/refresh.ts the function refreshToken fails after 30 minutes, add a failing test first and run npm test --coverage"
+        let good = "Goal: Fix refreshToken.\nContext:\n- In src/auth/refresh.ts the function refreshToken fails after 30 minutes.\nRequirements:\n- Add a failing test first.\nDone when: npm test --coverage passes."
+        XCTAssertTrue(RewriteGuard.looksLikeRewrite(original: notes, rewritten: good, mode: .codingPrompt))
+        XCTAssertFalse(RewriteGuard.looksLikeRewrite(original: notes, rewritten: good.replacingOccurrences(of: "src/auth/refresh.ts", with: "the auth file"), mode: .codingPrompt))
+        XCTAssertFalse(RewriteGuard.looksLikeRewrite(original: notes, rewritten: good.replacingOccurrences(of: "30 minutes", with: "45 minutes"), mode: .codingPrompt))
+        XCTAssertTrue(RewriteMode.builders.contains(.commitMessage))
+        XCTAssertEqual(RewriteMode.writing.count + RewriteMode.builders.count, RewriteMode.allCases.count)
+    }
+
+    func testSpokenCodeNamesWorkInDictation() {
+        XCTAssertEqual(CodeSpeech.apply("Camel case user profile card."), "userProfileCard")
+        XCTAssertEqual(CodeSpeech.apply("Open index dot ts and fix it."), "Open index.ts and fix it.")
+        XCTAssertEqual(SpokenCommands.parse("Snake case max retry count").text, "max_retry_count")
+        XCTAssertEqual(CodeSpeech.apply("I like camel case names."), "I like camel case names.")
+    }
 }

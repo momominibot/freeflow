@@ -52,8 +52,8 @@ enum PhoneRewriter {
                 if case .unavailable(let why) = availability { throw Failure(message: why) }
                 throw Failure(message: "Rewriting is not available.")
             }
-            let session = LanguageModelSession(instructions: RewritePrompt.system)
-            let options = GenerationOptions(temperature: mode == .fix ? 0.1 : (mode == .rephrase ? 0.7 : 0.3))
+            let session = LanguageModelSession(instructions: RewritePrompt.system(for: mode))
+            let options = GenerationOptions(temperature: mode.temperature)
             do {
                 let response = try await session.respond(to: RewritePrompt.user(text, mode: mode, terms: terms), options: options)
                 let out = RewriteGuard.tidy(response.content)

@@ -190,11 +190,10 @@ final class Rewriter {
     /// dropped one of your words or switched language is thrown away (RewriteGuard) instead of being shown.
     func rewrite(_ text: String, mode: RewriteMode, terms: [String], completion: @escaping (Result<String, Error>) -> Void) {
         let words = TextCleaner.wordCount(text)
-        let temperature: Double = mode == .fix ? 0.1 : (mode == .rephrase ? 0.6 : 0.3)
         let body: [String: Any] = [
             "model": model, "stream": false, "think": false, "keep_alive": "60m",
-            "options": ["temperature": temperature, "num_predict": min(2000, 200 + words * 4)],
-            "messages": [["role": "system", "content": RewritePrompt.system],
+            "options": ["temperature": mode.temperature, "num_predict": min(2000, 200 + words * (mode.isBuilder ? 8 : 4))],
+            "messages": [["role": "system", "content": RewritePrompt.system(for: mode)],
                          ["role": "user", "content": RewritePrompt.user(text, mode: mode, terms: terms)]],
         ]
         post("api/chat", body, timeout: 60) { result in

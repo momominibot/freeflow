@@ -726,8 +726,26 @@ enum ToneReader {
 
 enum RewriteMode: String, CaseIterable, Identifiable {
     case fix, clearer, shorter, rephrase, friendlier, professional, confident
+    /// For people who build with AI: speech or rough notes in, text ready for a coding agent or a code host out.
+    case codingPrompt, taskPlan, bugReport, commitMessage, conventionalCommit, pullRequest, codeComment
 
     var id: String { rawValue }
+
+    /// The everyday writing rewrites, and the ones for builders (coding prompts, commit messages ...), shown as two groups.
+    static var writing: [RewriteMode] { allCases.filter { !$0.isBuilder } }
+    static var builders: [RewriteMode] { allCases.filter { $0.isBuilder } }
+
+    var isBuilder: Bool {
+        switch self {
+        case .codingPrompt, .taskPlan, .bugReport, .commitMessage, .conventionalCommit, .pullRequest, .codeComment: return true
+        default: return false
+        }
+    }
+
+    var isCommit: Bool { self == .commitMessage || self == .conventionalCommit }
+
+    /// Rewrites that are allowed to leave out a number or a name from the notes (a commit message is a summary).
+    var mayDropDetails: Bool { self == .shorter || isCommit || self == .codeComment }
 
     var title: String {
         switch self {
@@ -738,6 +756,13 @@ enum RewriteMode: String, CaseIterable, Identifiable {
         case .friendlier: return "Friendlier"
         case .professional: return "More professional"
         case .confident: return "More confident"
+        case .codingPrompt: return "Coding prompt"
+        case .taskPlan: return "Step-by-step plan"
+        case .bugReport: return "Bug report"
+        case .commitMessage: return "Commit message"
+        case .conventionalCommit: return "Conventional commit"
+        case .pullRequest: return "Pull request"
+        case .codeComment: return "Code comment"
         }
     }
 
@@ -750,6 +775,22 @@ enum RewriteMode: String, CaseIterable, Identifiable {
         case .friendlier: return "face.smiling"
         case .professional: return "briefcase"
         case .confident: return "bolt"
+        case .codingPrompt: return "terminal"
+        case .taskPlan: return "checklist"
+        case .bugReport: return "ladybug"
+        case .commitMessage: return "arrow.triangle.branch"
+        case .conventionalCommit: return "tag"
+        case .pullRequest: return "arrow.triangle.pull"
+        case .codeComment: return "curlybraces"
+        }
+    }
+
+    /// How freely the model may word things: low for edits that must stay faithful, higher for a plain rephrase.
+    var temperature: Double {
+        switch self {
+        case .fix: return 0.1
+        case .rephrase: return 0.7
+        default: return isBuilder ? 0.2 : 0.3
         }
     }
 
@@ -762,6 +803,20 @@ enum RewriteMode: String, CaseIterable, Identifiable {
         case .friendlier: return "Rewrite this in a warmer, friendlier tone. Keep the meaning and every fact."
         case .professional: return "Rewrite this in a polite, professional tone suitable for work email. Keep the meaning and every fact."
         case .confident: return "Rewrite this to sound more confident and direct. Remove hedging such as \"I think\", \"maybe\", \"just\" and \"sorry to bother\". Stay polite. Keep the meaning and every fact."
+        case .codingPrompt:
+            return "Write the notes up as a prompt for an AI coding agent. Open with one plain sentence that states the goal. Then add only the parts the notes really give, each on its own labelled line or short list, in this order: Context: (what exists, what is wrong, where), Requirements: (what to build or change, one point per line), Constraints: (what to follow, reuse or avoid, and what not to touch), Done when: (how to tell it worked, such as a test, a command or something visible). Leave out any label with nothing under it."
+        case .taskPlan:
+            return "Turn the notes into a plan for an AI coding agent. First a line that states the goal. Then a numbered list of small steps in the order they should be done, each one action that can be checked. Use only steps the notes state or clearly imply; add no extra steps. If the notes name a check to run, make it the last step."
+        case .bugReport:
+            return "Write the notes up as a bug report. Use these labelled parts and leave out any the notes do not cover: Summary: (one line), What happens:, What should happen:, Steps to reproduce: (numbered), Where: (files, screens, versions, device), Error text: (exactly as given)."
+        case .commitMessage:
+            return "Write one git commit message from the notes. First line: a short summary in the imperative mood (\"Add\", \"Fix\", \"Remove\"), no full stop, 50 characters or fewer when possible and never more than 72. If the notes give a reason, add a blank line and then a body of one or two plain sentences that say why, not only what. No type prefix and no emoji."
+        case .conventionalCommit:
+            return "Write one git commit message in the Conventional Commits style from the notes. First line: type(scope): description. The type is one of feat, fix, docs, style, refactor, perf, test, build, ci, chore. Add (scope) only if the notes name an area. The description is lower case, in the imperative mood, with no full stop, and the whole first line is at most 72 characters. If the notes give a reason, add a blank line and a short body. If the notes say existing behaviour breaks, end with a line that starts BREAKING CHANGE: and says what breaks."
+        case .pullRequest:
+            return "Write a pull request description from the notes. Use these labelled parts and leave out any the notes do not cover: Summary: (what changed, in one or two sentences), Why: (the problem or reason), Changes: (short list), How to test: (steps or commands exactly as given), Notes for the reviewer: (risks, follow-ups, things to check)."
+        case .codeComment:
+            return "Write a code comment from the notes, not code: one to three short sentences that say what the code does and why, in plain words. Do not add comment marks such as // or #. Do not repeat the code line by line."
         }
     }
 
@@ -771,6 +826,9 @@ enum RewriteMode: String, CaseIterable, Identifiable {
         case .fix: return 0.7...1.3
         case .shorter: return 0.2...1.02
         case .clearer: return 0.4...1.5
+        case .codingPrompt, .taskPlan, .bugReport, .pullRequest: return 0.5...4.0
+        case .commitMessage, .conventionalCommit: return 0.1...1.6
+        case .codeComment: return 0.1...2.5
         default: return 0.4...2.2
         }
     }
@@ -786,11 +844,25 @@ enum RewritePrompt {
     - Output the text only: no quotes, no explanation, no heading.
     """
 
+    /// For the builder modes (coding prompt, commit message ...): the model writes up rough or spoken notes, it never does the task.
+    static let builderSystem = """
+    You turn spoken or rough notes from someone who builds software into clean text for an AI coding agent or a code host. You return only that text.
+    - Use only what the notes say. Never invent a file, function, library, command, number, error message or requirement. If a part is not in the notes, leave that part out.
+    - Keep every file name, path, function or variable name, command, flag, version, number, link and error text exactly as written, character for character.
+    - Drop filler, false starts and politeness (please, thank you, "hey Claude"). Keep every requirement, constraint and preference, even a small one. Apply the speaker's own corrections ("make that 75, not 50").
+    - Write plain text. Use the labels you are asked for, each followed by a colon, and short lines that start with "- " for lists. No Markdown headings, no bold, no code fences, no quotes around the whole output.
+    - Never answer a question that is in the notes and never do the task described; only write it up for someone else to do.
+    - Keep the language of the notes. If the notes mix English with Chinese, Malay or Tamil, keep that mix.
+    - Output the text only: no explanation, no heading of your own.
+    """
+
+    static func system(for mode: RewriteMode) -> String { mode.isBuilder ? builderSystem : system }
+
     static func user(_ text: String, mode: RewriteMode, terms: [String] = []) -> String {
         var s = "Instruction: \(mode.instruction)\n"
         let kept = terms.filter { text.localizedCaseInsensitiveContains($0) }.prefix(20)
         if !kept.isEmpty { s += "Keep these words exactly as spelled: \(kept.joined(separator: ", ")).\n" }
-        return s + "\nText:\n" + text
+        return s + (mode.isBuilder ? "\nNotes:\n" : "\nText:\n") + text
     }
 }
 
@@ -824,6 +896,51 @@ enum RewriteGuard {
         return runs
     }
 
+    /// Things a builder writes that must come out exactly as they went in: `backtick` spans, file names and paths, snake_case and
+    /// camelCase names, calls like save(), --flags, links, versions, @mentions and #issue numbers.
+    static func codeTokens(_ s: String) -> [String] {
+        let exts = "swift|ts|tsx|js|jsx|mjs|py|rs|go|rb|java|kt|c|h|cpp|hpp|cs|php|sh|zsh|md|json|yaml|yml|toml|css|scss|html|xml|sql|txt|lock|env|plist|ini|cfg|csv|png|jpg|svg"
+        // (pattern, capture group to keep, ignore case, is a bare path that needs the slash checks below)
+        let patterns: [(String, Int, Bool, Bool)] = [
+            ("`([^`\\n]+)`", 1, false, false),
+            ("https?://[^\\s)\\]>\"']+", 0, false, false),
+            ("(?<![\\w])[\\w./@~-]*[\\w-]\\.(?:\(exts))\\b", 0, true, false),
+            ("(?<![\\w/.~])(?:\\.{1,2}/|~/|/)?[\\w.-]+(?:/[\\w.-]+)+/?", 0, false, true),
+            ("\\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\\b", 0, false, false),
+            ("\\b[a-z]+(?:[A-Z][a-z0-9]*)+\\b", 0, false, false),
+            ("\\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]*)+\\b", 0, false, false),
+            ("\\b[A-Za-z_][\\w.]*\\(\\)", 0, false, false),
+            ("(?<![\\w-])--[A-Za-z][\\w-]*", 0, false, false),
+            ("(?<=\\s)-[A-Za-z]\\b(?!-)", 0, false, false),
+            ("\\bv?\\d+\\.\\d+(?:\\.\\d+)+\\b", 0, false, false),
+            ("(?<![\\w])[@#][\\w./-]*\\w", 0, false, false),
+        ]
+        var found: [String] = []
+        let ns = s as NSString
+        for (pattern, group, ignoreCase, barePath) in patterns {
+            guard let re = try? NSRegularExpression(pattern: pattern, options: ignoreCase ? [.caseInsensitive] : []) else { continue }
+            for m in re.matches(in: s, range: NSRange(location: 0, length: ns.length)) {
+                let r = m.range(at: group)
+                guard r.location != NSNotFound else { continue }
+                let token = ns.substring(with: r).trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?\"'"))
+                if barePath {
+                    // A slash alone is not a path ("and/or", "24/7"): it needs two slashes, a leading ./ ../ ~/ / or a trailing /.
+                    let slashes = token.filter { $0 == "/" }.count
+                    let anchored = token.hasPrefix("./") || token.hasPrefix("../") || token.hasPrefix("~/") || token.hasPrefix("/") || token.hasSuffix("/")
+                    guard slashes >= 2 || anchored, token.contains(where: { $0.isLetter }) else { continue }
+                }
+                if token.count >= 2 { found.append(token) }
+            }
+        }
+        var seen = Set<String>()
+        return found.filter { seen.insert($0).inserted }
+    }
+
+    /// The same digit runs `digitRuns` finds, but not the 1. 2. 3. a list adds in front of its lines.
+    static func digitRunsIgnoringListMarkers(_ s: String) -> [String] {
+        digitRuns(s.replacingOccurrences(of: "(?m)^\\s*\\d{1,2}[.)]\\s+", with: "", options: .regularExpression))
+    }
+
     /// Strips the wrapping a chatty model adds: <think> blocks, code fences, quotes around everything, "Here is ...".
     static func tidy(_ s: String) -> String {
         var t = s.replacingOccurrences(of: "<think>[\\s\\S]*?</think>", with: "", options: .regularExpression)
@@ -850,19 +967,31 @@ enum RewriteGuard {
         if cjkA >= 2, Double(cjkB) < 0.6 * Double(cjkA) { return false }
         if cjkA == 0, cjkB > 0 { return false }
         // Numbers: none invented, and the ones kept stay in order. "Shorter" may drop some.
-        let na = digitRuns(a), nb = digitRuns(b)
+        // A builder's list adds 1. 2. 3. in front of lines and moves things under labels, so list markers are ignored and order is not checked.
+        let na = mode.isBuilder ? digitRunsIgnoringListMarkers(a) : digitRuns(a)
+        let nb = mode.isBuilder ? digitRunsIgnoringListMarkers(b) : digitRuns(b)
         guard Set(nb).isSubset(of: Set(na)) else { return false }
         guard chineseNumerals(b).isSubset(of: chineseNumerals(a)) else { return false }
-        if mode != .shorter, mode != .confident, Set(na) != Set(nb) { return false }
-        var i = na.startIndex
-        for n in nb {
-            guard let j = na[i...].firstIndex(of: n) else { return false }
-            i = j + 1
+        if mode != .shorter, mode != .confident, !mode.mayDropDetails, Set(na) != Set(nb) { return false }
+        if !mode.isBuilder {
+            var i = na.startIndex
+            for n in nb {
+                guard let j = na[i...].firstIndex(of: n) else { return false }
+                i = j + 1
+            }
         }
         // Your words (names, products) survive exactly as spelled.
         for term in protectedTerms where term.count > 2 && a.contains(term) && !b.contains(term) {
-            if mode == .shorter { continue }
+            if mode.mayDropDetails { continue }
             return false
+        }
+        if mode.isBuilder {
+            // File names, identifiers, flags and links survive character for character (a commit message may leave some out).
+            if !mode.mayDropDetails {
+                for token in codeTokens(a) where !b.contains(token) { return false }
+            }
+            // A commit message starts with a short summary line.
+            if mode.isCommit, (b.components(separatedBy: "\n").first ?? "").count > 72 { return false }
         }
         let lower = b.lowercased()
         for tell in ["here is", "here's the", "here are", "sure,", "sure!", "certainly", "as an ai", "i cannot", "i can't", "rewritten text"] where lower.hasPrefix(tell) {

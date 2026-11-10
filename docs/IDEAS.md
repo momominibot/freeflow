@@ -22,6 +22,7 @@ Rules every idea has to pass: it runs on this Mac, it keeps plain files, it need
 | Learn from my own typing: a clear spelling fix is kept the first time (after 20 s), anything less clear when made twice; accuracy meter | `Sources/Typing.swift`, Learning page |
 | Polish: spelling, grammar, punctuation, clarity and style suggestions with one-click fixes, tone and reading time, seven rewrites, word swaps; also on selected text anywhere and (off by default) on what you dictate | `Sources/Polish.swift`, `Sources/PolishPage.swift`, Polish page |
 | FreeFlow for iPhone: talk, and Polish with the same checker and Apple Intelligence rewrites | `ios/` |
+| For AI builders: seven rewrites (coding prompt, plan, bug report, commit, conventional commit, pull request, code comment) with a guard that refuses a rewrite that lost a file name, flag or number; spoken code names ("camel case ...", "index dot ts") | `Sources/Polish.swift`, `Sources/Text.swift` (`CodeSpeech`), `docs/AI-BUILDERS.md` |
 | One command that checks every function | `scripts/smoke.sh` |
 
 ## Next, in the order I would do them
@@ -42,6 +43,8 @@ Rules every idea has to pass: it runs on this Mac, it keeps plain files, it need
 - Ask about my week: a local model answers from the notes ("when did I last touch the EMIS theme?").
 
 **5. Writing (medium).** Polish is built (see above). Still to do: Polish suggestions live under the cursor as you type in any app (Grammarly's underlines; needs the Accessibility text API per app, so opt-in), a plagiarism-style "is this too close to a source" check (not planned), a Polish goal per document (audience, formality, intent) like Grammarly's goals, and a weekly writing report. Also: a Rewrite level above Medium for people who want the AI to rephrase and expand; tone by category (personal, work, email, other) with a very casual option; language per app; file and folder names from a project folder added to the vocabulary so code and paths are spelled right.
+
+**5b. For AI builders, next steps.** Built: see `docs/AI-BUILDERS.md`. Not built: one key that speaks a prompt in one step (hold, talk, a structured prompt is typed; needs its own guard because dictation tidy-up expects the same words back), reading the project's `CLAUDE.md` or `AGENTS.md` to add its conventions to a prompt, file tagging from the editor, answering a coding agent by voice.
 
 **6. Meetings (medium).** Action items with owners; ask across all meetings; choose the notes folder (Obsidian); watch a folder and write down whatever audio lands in it; real speaker names.
 

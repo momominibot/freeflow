@@ -249,7 +249,9 @@ struct PolishPage: View {
     @ViewBuilder private var rewriteSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionTitle(text: "Rewrite it")
-            WrapChipPicker(options: RewriteMode.allCases.map { ($0, $0.title) }, selection: $polish.mode)
+            WrapChipPicker(options: RewriteMode.writing.map { ($0, $0.title) }, selection: $polish.mode)
+            Text("For AI builders").font(Fonts.sans(11.5, .bold)).foregroundColor(RT.ink3).padding(.top, 2)
+            WrapChipPicker(options: RewriteMode.builders.map { ($0, $0.title) }, selection: $polish.mode)
             Text(polish.mode.instruction).font(Fonts.sans(12.5, .medium)).foregroundColor(RT.ink3).fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 10) {
                 Button(polish.rewriting ? "Working…" : "Rewrite", action: polish.runRewrite)

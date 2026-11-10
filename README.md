@@ -57,6 +57,14 @@ What people love in Grammarly, kept on this Mac: nothing you write leaves it.
 - **While you dictate** (Settings › Writing, off until you switch it on): **Fix clear slips in what I say** repairs a wrong a/an, a lowercase "I" and a doubled word. Spelling is left alone. **Spelling** chooses British (the default, used in Singapore), American or Australian.
 - Your dictionary and your team's are never called mistakes, and URLs, e-mail addresses and symbol words such as `EMIS+` are skipped.
 
+### For people who build with AI
+
+Seven more rewrites sit under **For AI builders** (Polish page, and menu bar menu › Rewrite selected text): **Coding prompt**, **Step-by-step plan**, **Bug report**, **Commit message**, **Conventional commit**, **Pull request** and **Code comment**. Rough or spoken notes go in; plain text for an agent or a code host comes out. They only use what you said (a part you did not mention is left out), and a rewrite that lost or changed a file name, path, `snake_case` or `camelCase` name, `--flag`, link, version, error text or number is thrown away instead of shown.
+
+You can also say code as it is written, with no AI and in both apps: "camel case user profile card" gives `userProfileCard` (also snake, kebab, pascal and constant case), "index dot ts" gives `index.ts`, "src slash app slash main dot swift" gives `src/app/main.swift`, "dash dash force" gives `--force`. A case command only counts at the start of a sentence, so "I like camel case names" is left alone.
+
+What other voice tools already do, and what we took from them: `docs/AI-BUILDERS.md`.
+
 The checker is [Harper](https://github.com/Automattic/harper) (Apache-2.0, by Automattic), compiled into the app, so it works offline and fast. `scripts/build-harper.sh` builds it once (needs Rust; `./build.sh` links it automatically when `native/harper/` exists and `./build.sh release` builds it if missing). Without it FreeFlow still builds and falls back to a smaller built-in rule list. Both engines run the same checks in `FreeFlow --test`. Licences: `ThirdPartyNotices.txt` (regenerate with `python3 scripts/gen-notices.py`).
 
 ### The pictures

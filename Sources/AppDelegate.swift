@@ -837,7 +837,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let transforms = ModeStore.load().transforms
         do {
             let sub = NSMenu()
-            for mode in RewriteMode.allCases where mode != .fix {
+            for mode in RewriteMode.writing where mode != .fix {
+                let it = item(mode.title, #selector(runRewriteItem(_:)), symbol: mode.symbol)
+                it.representedObject = mode.rawValue
+                sub.addItem(it)
+            }
+            // For people who build with AI: rough or spoken notes in, a prompt, plan, bug report or commit message out.
+            sub.addItem(.separator())
+            sub.addItem(info("For AI builders"))
+            for mode in RewriteMode.builders {
                 let it = item(mode.title, #selector(runRewriteItem(_:)), symbol: mode.symbol)
                 it.representedObject = mode.rawValue
                 sub.addItem(it)

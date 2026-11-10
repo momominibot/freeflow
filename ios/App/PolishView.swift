@@ -330,7 +330,13 @@ struct PolishView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Rewrite it").font(.system(size: 20, weight: .bold)).foregroundColor(RT.ink)
                 FlowLayout(spacing: 8) {
-                    ForEach(RewriteMode.allCases) { m in
+                    ForEach(RewriteMode.writing) { m in
+                        FilterPill(title: m.title, on: p.mode == m) { p.mode = m }
+                    }
+                }
+                Text("For AI builders").font(.system(size: 12, weight: .bold)).foregroundColor(RT.ink3).padding(.top, 2)
+                FlowLayout(spacing: 8) {
+                    ForEach(RewriteMode.builders) { m in
                         FilterPill(title: m.title, on: p.mode == m) { p.mode = m }
                     }
                 }

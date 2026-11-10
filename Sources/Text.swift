@@ -174,6 +174,84 @@ enum TextCleaner {
     }
 }
 
+/// Say code the way it is written: "camel case user profile" gives userProfile. The same vocabulary Talon and Wispr Flow use,
+/// as fixed rules (not model judgement), so a phrase gives the same name every time, on the Mac and on the iPhone.
+///   camel case / snake case / kebab case (or dash case) / pascal case / constant case     then the words of the name
+///   "index dot ts" gives index.ts, "src slash app slash main dot swift" gives src/app/main.swift, "dash dash force" gives --force
+/// A case command only counts at the start of a clause (the whole dictation, or after . ! ? , ;), and the name stops at the
+/// first bit of punctuation or small joining word (and, then, is, to, with ...), so "I like camel case names" is left alone.
+enum CodeSpeech {
+    private enum Case { case camel, snake, kebab, pascal, constant }
+
+    private static let triggers: [(String, Case)] = [
+        ("screaming snake case", .constant), ("constant case", .constant), ("snake case", .snake),
+        ("camel case", .camel), ("pascal case", .pascal), ("kebab case", .kebab), ("dash case", .kebab),
+    ]
+
+    private static let stopWords: Set<String> = [
+        "and", "then", "but", "or", "so", "because", "which", "that", "is", "are", "was", "were", "should", "will", "would", "can",
+        "in", "on", "to", "from", "with", "into", "for", "as", "when", "if", "please", "thanks", "thank",
+    ]
+
+    private static let extensions = "swift|ts|tsx|js|jsx|mjs|py|rs|go|rb|java|kt|cpp|hpp|php|sh|zsh|md|json|yaml|yml|toml|css|scss|html|xml|sql|txt|lock|env|plist|csv|png|jpg|svg"
+
+    static func apply(_ input: String) -> String {
+        var t = input
+        // Names in a given case, clause by clause.
+        let names = triggers.map { NSRegularExpression.escapedPattern(for: $0.0).replacingOccurrences(of: "\\ ", with: " ") }.joined(separator: "|")
+        let pattern = "(?im)(^|[.!?,;]\\s+|\\n)(\(names))[ \\t]+([A-Za-z0-9][A-Za-z0-9'’-]*(?:[ \\t]+[A-Za-z0-9][A-Za-z0-9'’-]*)*)"
+        if let re = try? NSRegularExpression(pattern: pattern) {
+            let ns = t as NSString
+            for m in re.matches(in: t, range: NSRange(location: 0, length: ns.length)).reversed() {
+                let lead = ns.substring(with: m.range(at: 1))
+                let trigger = ns.substring(with: m.range(at: 2)).lowercased()
+                guard let style = triggers.first(where: { $0.0 == trigger })?.1 else { continue }
+                var words = ns.substring(with: m.range(at: 3)).split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+                var rest: [String] = []
+                if let stop = words.firstIndex(where: { stopWords.contains($0.lowercased()) }) {
+                    rest = Array(words[stop...]); words = Array(words[..<stop])
+                }
+                if words.count > 6 { rest = Array(words[6...]) + rest; words = Array(words[..<6]) }
+                guard !words.isEmpty else { continue }
+                var replacement = lead + format(words, style)
+                if !rest.isEmpty { replacement += " " + rest.joined(separator: " ") }
+                // "Camel case user name." as the whole dictation: the name, without a sentence full stop after it.
+                let end = m.range.location + m.range.length
+                if lead.isEmpty, rest.isEmpty, ns.substring(from: end).trimmingCharacters(in: .whitespaces) == "." {
+                    t = ns.replacingCharacters(in: NSRange(location: m.range.location, length: ns.length - m.range.location), with: replacement)
+                } else {
+                    t = ns.replacingCharacters(in: m.range, with: replacement)
+                }
+                return apply(t) // one name at a time keeps the ranges simple; the loop ends when none are left
+            }
+        }
+        // File names and paths: "index dot ts", "src slash app slash main dot swift".
+        t = TextCleaner.sub(t, "(?i)\\b([A-Za-z0-9_-]+) dot (\(extensions))\\b", "$1.$2")
+        if let re = try? NSRegularExpression(pattern: "(?i)\\b[A-Za-z0-9_-]+(?: slash [A-Za-z0-9_-]+)+(?=\\.(?:\(extensions))\\b)") {
+            let ns = t as NSString
+            for m in re.matches(in: t, range: NSRange(location: 0, length: ns.length)).reversed() {
+                let path = ns.substring(with: m.range).replacingOccurrences(of: " slash ", with: "/", options: .caseInsensitive)
+                t = (t as NSString).replacingCharacters(in: m.range, with: path)
+            }
+        }
+        // Flags: "dash dash force" is --force.
+        t = TextCleaner.sub(t, "(?i)\\bdash dash ([A-Za-z][A-Za-z0-9-]*)", "--$1")
+        return t
+    }
+
+    private static func format(_ words: [String], _ style: Case) -> String {
+        let clean = words.map { $0.replacingOccurrences(of: "['’]", with: "", options: .regularExpression).lowercased() }.filter { !$0.isEmpty }
+        func cap(_ w: String) -> String { w.prefix(1).uppercased() + w.dropFirst() }
+        switch style {
+        case .camel: return clean.enumerated().map { $0.offset == 0 ? $0.element : cap($0.element) }.joined()
+        case .pascal: return clean.map(cap).joined()
+        case .snake: return clean.joined(separator: "_")
+        case .kebab: return clean.joined(separator: "-")
+        case .constant: return clean.joined(separator: "_").uppercased()
+        }
+    }
+}
+
 /// Things you can say at the end of a dictation, like Wispr Flow's "press enter".
 struct SpokenCommands {
     var text: String
@@ -181,7 +259,7 @@ struct SpokenCommands {
 
     static func parse(_ input: String) -> SpokenCommands {
         var out = SpokenCommands(text: input)
-        var t = input
+        var t = CodeSpeech.apply(input)
         // "... press enter" / "hit return" / "send it" at the very end sends the message after pasting.
         // A command must start its own clause: the whole dictation, or right after . ! ? , ; so "and then press enter"
         // inside a sentence is left alone. The sentence's own full stop before the command is kept; a comma is dropped.
