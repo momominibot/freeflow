@@ -11,6 +11,7 @@ struct AcknowledgementsView: View {
         Part(name: "Harper", what: "The grammar and spelling checker in the Polish tab. By Automattic.", licence: "Apache-2.0"),
         Part(name: "WhisperKit", what: "Runs the speech model on this iPhone. By Argmax.", licence: "MIT"),
         Part(name: "Whisper", what: "The speech models themselves. By OpenAI.", licence: "MIT"),
+        Part(name: "Rhea and the cats", what: "The pictures on the Talk and Polish tabs and the app icon. Our own artwork, drawn for Rhythme.", licence: "Ours"),
         Part(name: "Apple Intelligence", what: "Writes the rewrites on iPhones that support it. Part of iOS.", licence: "Apple"),
     ]
 

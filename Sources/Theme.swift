@@ -107,17 +107,51 @@ struct Face: View {
         GeometryReader { g in
             let w = g.size.width, h = g.size.height
             let eye = h * 0.27
-            ZStack {
-                Circle().fill(color).frame(width: eye, height: eye).position(x: w * 0.20, y: h * 0.34)
-                Circle().fill(color).frame(width: eye, height: eye).position(x: w * 0.80, y: h * 0.34)
-                mouth(w, h)
+            if Settings.shared.catTheme {
+                catHead(w, h, eye)
+            } else {
+                ZStack {
+                    Circle().fill(color).frame(width: eye, height: eye).position(x: w * 0.20, y: h * 0.34)
+                    Circle().fill(color).frame(width: eye, height: eye).position(x: w * 0.80, y: h * 0.34)
+                    mouth(w, h)
+                }
             }
         }
         .aspectRatio(2.0, contentMode: .fit)
     }
 
+    /// The cute-cat look: a solid cat head with the eyes and mouth cut out of it (the same drawing as the menu bar icon).
+    private func catHead(_ w: CGFloat, _ h: CGFloat, _ eye: CGFloat) -> some View {
+        ZStack {
+            Ellipse().fill(color).frame(width: w, height: h * 1.24).position(x: w * 0.5, y: h * 0.5)
+            ear(w, h, foot: 0.07, tip: 0.10, inner: 0.37)
+            ear(w, h, foot: 0.93, tip: 0.90, inner: 0.63)
+            ZStack {
+                Circle().fill(Color.black).frame(width: eye, height: eye).position(x: w * 0.20, y: h * 0.34)
+                Circle().fill(Color.black).frame(width: eye, height: eye).position(x: w * 0.80, y: h * 0.34)
+                mouth(w, h, Color.black)
+            }
+            .blendMode(.destinationOut)
+        }
+        .compositingGroup()
+    }
+
+    private func ear(_ w: CGFloat, _ h: CGFloat, foot: CGFloat, tip: CGFloat, inner: CGFloat) -> some View {
+        let shape = Path { p in
+            p.move(to: CGPoint(x: w * foot, y: h * 0.30))
+            p.addLine(to: CGPoint(x: w * tip, y: -h * 0.50))
+            p.addLine(to: CGPoint(x: w * inner, y: -h * 0.12))
+            p.closeSubpath()
+        }
+        return ZStack {
+            shape.fill(color)
+            shape.stroke(color, style: StrokeStyle(lineWidth: max(1, h * 0.08), lineJoin: .round))
+        }
+    }
+
     @ViewBuilder
-    private func mouth(_ w: CGFloat, _ h: CGFloat) -> some View {
+    private func mouth(_ w: CGFloat, _ h: CGFloat, _ override: Color? = nil) -> some View {
+        let color = override ?? self.color
         let line = max(1.3, h * 0.15)
         switch mood {
         case .smile:
@@ -148,13 +182,31 @@ struct Face: View {
 enum Art {
     private static var cache: [String: NSImage] = [:]
 
+    /// The picture for a part of the app. With the cute-cat look on (the default) it is Rhea and her cats from
+    /// assets/art/cats; without it, or if that picture is missing, it is the pearly mascot from assets/art.
     static func image(_ name: String) -> NSImage? {
-        if let i = cache[name] { return i }
-        guard let url = Bundle.main.resourceURL?.appendingPathComponent("Brand/art/\(name).webp"),
+        if Settings.shared.catTheme, let cat = catImage(name) { return cat }
+        return load("Brand/art/\(name).webp")
+    }
+
+    /// A picture from the cat set only (the kitten for the logo, the full-figure heroes), nil if there is none.
+    static func catImage(_ name: String) -> NSImage? { load("Brand/art/cats/\(name).webp") }
+
+    /// A brand picture for the MCP page (assets/brand/apps), nil if there is none.
+    static func appLogo(_ name: String) -> NSImage? { load("Brand/apps/\(name).png") }
+
+    private static func load(_ path: String) -> NSImage? {
+        if let i = cache[path] { return i }
+        guard let url = Bundle.main.resourceURL?.appendingPathComponent(path),
               let img = NSImage(contentsOf: url) else { return nil }
-        cache[name] = img
+        cache[path] = img
         return img
     }
+}
+
+extension Notification.Name {
+    /// Posted when the look is switched (cute cats or the pearly bubble) so the menu bar face can be redrawn.
+    static let freeflowLookChanged = Notification.Name("freeflowLookChanged")
 }
 
 /// A painted picture at a given size, or the little face when there is none.
@@ -192,7 +244,10 @@ struct Emblem: View {
     }()
 
     var body: some View {
-        if let img = Self.logo {
+        if Settings.shared.catTheme, let kitten = Art.catImage("kitten") {
+            Image(nsImage: kitten).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
+        } else if let img = Self.logo {
             Image(nsImage: img).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
                 .frame(width: size, height: size)
         } else {

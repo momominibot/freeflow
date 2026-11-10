@@ -169,6 +169,12 @@ final class Settings {
         set { d.set(newValue, forKey: "detailInterval") }
     }
 
+    /// The cute-cat look (10 Nov 2026): Rhea and her cats from Rhythme in the pictures, cat ears on the little face. On by default.
+    var catTheme: Bool {
+        get { d.object(forKey: "catTheme") as? Bool ?? true }
+        set { d.set(newValue, forKey: "catTheme") }
+    }
+
     var appearance: AppearanceChoice {
         get { AppearanceChoice(rawValue: d.string(forKey: "appearance") ?? "") ?? .system }
         set { d.set(newValue.rawValue, forKey: "appearance") }

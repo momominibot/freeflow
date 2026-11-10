@@ -144,6 +144,7 @@ struct GeneralTab: View {
         let cmdOn = model.bind({ s.commandMode }, { s.commandMode = $0 }, then: model.bridge.commandModeChanged)
         let cmdKey = model.bind({ s.commandKey }, { s.commandKey = $0 }, then: model.bridge.hotkeysChanged)
         let look = model.bind({ s.appearance }, { s.appearance = $0 }, then: { AppearanceChoice.applySaved() })
+        let cats = model.bind({ s.catTheme }, { s.catTheme = $0 }, then: { NotificationCenter.default.post(name: .freeflowLookChanged, object: nil) })
 
         SettingsCard(title: "Shortcuts") {
             SettingRow(title: "Talk key", note: s.talkKey == .fn ? "Tip: if Fn switches your language or opens emoji, set Keyboard settings › Press 🌐 key to › Do Nothing." : s.talkKey == .leftControl ? "Any other key pressed while Control is down cancels, so shortcuts like Ctrl+C are safe. Holding it while you click or drag starts a dictation." : nil) {
@@ -174,6 +175,9 @@ struct GeneralTab: View {
         }
 
         SettingsCard(title: "Appearance") {
+            SettingRow(title: "Look", note: "Cute cats puts Rhea and her cats in the pictures and gives the little face cat ears.") {
+                ChipPicker(options: [(true, "Cute cats"), (false, "Pearly bubble")], selection: cats)
+            }
             SettingRow(title: "Colours", note: "Dark purple is the Rhythme night room. Match my Mac follows light and dark by itself.") {
                 ChipPicker(options: AppearanceChoice.allCases.map { ($0, $0.chipTitle) }, selection: look)
             }
@@ -306,28 +310,88 @@ struct NotetakerTab: View {
 
 struct MCPTab: View {
     @ObservedObject var model: StudioModel
-    @State private var copiedClaude = false
-    @State private var copiedJSON = false
+    @State private var picked: String?
+    @State private var copiedID: String?
+
+    private let columns = [GridItem(.adaptive(minimum: 128, maximum: 170), spacing: 12)]
 
     var body: some View {
-        Text("Let your favourite AI app search what you have said. The FreeFlow MCP runs on this Mac and only reads your dictation history.")
+        Text("Let your favourite AI app search what you have said. The FreeFlow MCP runs on this Mac and only reads your dictation history. Pick your app and the right thing is copied for it.")
             .font(Fonts.sans(14, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
-        SettingsCard(title: "Claude Code") {
-            SettingRow(title: "One command", note: "Copy it, paste it in a terminal, and Claude Code can search your dictations.") {
-                Button(copiedClaude ? "Copied" : "Copy command") {
-                    model.bridge.copyMCP()
-                    copiedClaude = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { copiedClaude = false; model.objectWillChange.send() }
-                }.buttonStyle(PrimaryButton(small: true))
+        SettingsCard(title: "Works with") {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                ForEach(MCPApps.all) { app in
+                    MCPAppTile(app: app, copied: copiedID == app.id, picked: picked == app.id) { copy(app) }
+                }
+            }
+            if let app = picked.flatMap(MCPApps.app) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(app.name): copied. Next:").font(Fonts.sans(13, .bold)).foregroundColor(RT.ink)
+                    Text(app.steps).font(Fonts.sans(12.5, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: RT.radiusSmall, style: .continuous).fill(RT.lilac2.opacity(0.6)))
             }
         }
-        SettingsCard(title: "Claude Desktop, Cursor and other apps") {
-            SettingRow(title: "Server entry", note: "Copy the JSON and add it under mcpServers in that app's MCP settings.") {
-                Button(copiedJSON ? "Copied" : "Copy config") {
-                    model.bridge.copyMCPConfig()
-                    copiedJSON = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { copiedJSON = false }
-                }.buttonStyle(GhostButton())
+        Text("Names and logos belong to their makers and are shown only to say FreeFlow works with them. Apps that are installed here show their own icon.")
+            .font(Fonts.sans(11.5, .medium)).foregroundColor(RT.ink3).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func copy(_ app: MCPApp) {
+        Inserter.copy(app.text(MCPApps.scriptPath))
+        model.settings.mcpCopied = true
+        picked = app.id
+        copiedID = app.id
+        model.objectWillChange.send()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { if copiedID == app.id { copiedID = nil } }
+    }
+}
+
+/// One app on the MCP page: its logo, its name, and what a click copies.
+struct MCPAppTile: View {
+    let app: MCPApp
+    let copied: Bool
+    let picked: Bool
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                MCPLogo(app: app).frame(width: 46, height: 46)
+                Text(app.name).font(Fonts.sans(13, .bold)).foregroundColor(RT.ink).lineLimit(1)
+                Text(copied ? "Copied" : app.kind.button)
+                    .font(Fonts.sans(11, .semibold)).foregroundColor(copied ? RT.ok : RT.ink3)
+            }
+            .padding(.vertical, 12).padding(.horizontal, 8)
+            .frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: RT.radiusSmall, style: .continuous).fill(hover || picked ? RT.lilac2.opacity(0.7) : RT.paper2.opacity(0.5)))
+            .overlay(RoundedRectangle(cornerRadius: RT.radiusSmall, style: .continuous).stroke(picked ? RT.mauve.opacity(0.6) : RT.line2, lineWidth: picked ? 1.5 : 1))
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
+        .help(app.kind == .command ? "Copies a command to paste in a terminal" : app.kind == .config ? "Copies a config entry to paste into \(app.name)'s settings" : "Copies the fields to fill in \(app.name)")
+    }
+}
+
+/// The picture for an app: its bundled brand picture on a white tile, else the installed app's own icon, else letters on a colour.
+struct MCPLogo: View {
+    let app: MCPApp
+
+    var body: some View {
+        if let name = app.glyph, let img = Art.appLogo(name) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color.white)
+                Image(nsImage: img).resizable().interpolation(.high).aspectRatio(contentMode: .fit).padding(10)
+            }
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(Color.black.opacity(0.08), lineWidth: 1))
+        } else if let url = MCPApps.installedURL(app.appNames) {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
+        } else {
+            ZStack {
+                RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color(hex: app.tint))
+                Text(app.letters).font(Fonts.sans(app.letters.count > 2 ? 12 : 17, .heavy)).foregroundColor(.white)
             }
         }
     }

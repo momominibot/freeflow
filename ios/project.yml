@@ -23,6 +23,10 @@ targets:
       - path: ../Sources/Text.swift
       # the grammar and wording checker the Mac app uses (Harper, built in), so both give the same suggestions
       - path: ../Sources/Polish.swift
+      # Rhea and the cats (Rhythme art): the same pictures the Mac app bundles, only the ones the iPhone shows
+      - path: ../assets/art/cats
+        includes: [hero-hug.webp, hero-listen.webp, hero-note.webp, hero-sleep.webp, learning.webp, kitten.webp]
+        buildPhase: resources
     dependencies:
       - package: ArgmaxOSS
         product: WhisperKit

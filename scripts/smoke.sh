@@ -88,6 +88,10 @@ stage_build() {
   local want have
   want=$(ls assets/art/*.webp | wc -l | tr -d ' '); have=$(ls "$res"/Brand/art/*.webp 2>/dev/null | wc -l | tr -d ' ')
   [ "$want" = "$have" ] && ok "all $want painted pictures are bundled" || bad "painted pictures bundled: $have of $want"
+  want=$(ls assets/art/cats/*.webp | wc -l | tr -d ' '); have=$(ls "$res"/Brand/art/cats/*.webp 2>/dev/null | wc -l | tr -d ' ')
+  [ "$want" = "$have" ] && ok "all $want cat pictures are bundled" || bad "cat pictures bundled: $have of $want"
+  want=$(ls assets/brand/apps/*.png | wc -l | tr -d ' '); have=$(ls "$res"/Brand/apps/*.png 2>/dev/null | wc -l | tr -d ' ')
+  [ "$want" = "$have" ] && ok "all $want app brand pictures are bundled" || bad "app brand pictures bundled: $have of $want"
   check "MCP server and Qwen engine scripts are bundled" test -x "$res/freeflow-mcp.py" -a -f "$res/qwen_server.py" -a -x "$res/install-qwen-engine.sh"
 }
 

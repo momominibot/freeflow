@@ -20,6 +20,7 @@ paste anywhere. No account and no server. After the speech model has been downlo
   commit, Pull request and Code comment. A rewrite that loses a file name, `--flag`, link, version or number is refused.
   Spoken code works in every dictation: "camel case user profile card" gives `userProfileCard`, "index dot ts" gives `index.ts`
   (`docs/AI-BUILDERS.md`).
+- **Rhea and the cats.** The Talk tab has a painted Rhea at the top that follows the state (ready, listening, working, done), the Polish tab shows a learning kitten while the editor is empty, and the app icon is the Rhythme kitten. The pictures are Rhythme's own paintings, the same webp files the Mac app uses (`assets/art/cats/`, included by `ios/project.yml`); `App/CatArt.swift` loads them with `UIImage(contentsOfFile:)` and shows nothing if one is missing. Credit is in Settings › Acknowledgements.
 - A history (the newest 200), copy, share, and writing down an audio file.
 - The dictionary is `dictionary.txt` in the app's Documents folder, so it shows in the Files app under
   On My iPhone › FreeFlow, and Settings › Dictionary can take the one from the Mac.
@@ -60,6 +61,10 @@ xcrun simctl launch --console-pty booted com.momominibot.freeflow.phone --transc
 ```
 
 It prints `FFTEST:` lines with the raw words and the finished text.
+
+To look at a screen without tapping (handy when only the simulator is available): `--show-polish` opens Polish with a sample
+text, `--show-polish-empty` opens it with the empty editor and the learning kitten, and `--scroll-to <id>` scrolls the Polish
+page to a card. Pass them after the bundle id in `xcrun simctl launch`.
 
 Running on a real iPhone needs the phone plugged in and unlocked, and a development profile that includes its UDID
 (the wildcard one saved at `~/.local/share/mobile-mcp/michiyomimi-dev.mobileprovision` covers the team's apps).

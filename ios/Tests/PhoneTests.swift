@@ -164,4 +164,17 @@ final class PhoneTests: XCTestCase {
         XCTAssertEqual(SpokenCommands.parse("Snake case max retry count").text, "max_retry_count")
         XCTAssertEqual(CodeSpeech.apply("I like camel case names."), "I like camel case names.")
     }
+
+    func testCatPicturesAreInTheApp() {
+        for name in ["hero-hug", "hero-listen", "hero-note", "hero-sleep", "learning", "kitten"] {
+            XCTAssertNotNil(CatArt.image(name), "\(name).webp is bundled and decodes")
+        }
+    }
+
+    func testRheaFollowsWhatTheAppIsDoing() {
+        XCTAssertEqual(CatArt.hero(for: .ready), "hero-hug")
+        XCTAssertEqual(CatArt.hero(for: .listening), "hero-listen")
+        XCTAssertEqual(CatArt.hero(for: .transcribing), "hero-note")
+        XCTAssertEqual(CatArt.hero(for: .preparing("Starting…")), "hero-sleep")
+    }
 }

@@ -23,6 +23,9 @@ Rules every idea has to pass: it runs on this Mac, it keeps plain files, it need
 | Polish: spelling, grammar, punctuation, clarity and style suggestions with one-click fixes, tone and reading time, seven rewrites, word swaps; also on selected text anywhere and (off by default) on what you dictate | `Sources/Polish.swift`, `Sources/PolishPage.swift`, Polish page |
 | FreeFlow for iPhone: talk, and Polish with the same checker and Apple Intelligence rewrites | `ios/` |
 | For AI builders: seven rewrites (coding prompt, plan, bug report, commit, conventional commit, pull request, code comment) with a guard that refuses a rewrite that lost a file name, flag or number; spoken code names ("camel case ...", "index dot ts") | `Sources/Polish.swift`, `Sources/Text.swift` (`CodeSpeech`), `docs/AI-BUILDERS.md` |
+| Cute cats Look (Rhea and Rhythme's kitten paintings, cat face on the bar and menu bar, cat Dock and app icon) with a switch back to the pearly bubble; the same on iPhone | `Sources/Theme.swift`, `ios/App/CatArt.swift`, `scripts/art/make_cat_art.py` |
+| MCP page with one brand-picture tile per app (Claude Code, Claude Desktop, ChatGPT, Codex, Cursor, Gemini CLI, Doubao Work, VS Code, Zed, Cline, Warp, Trae, Hermes, other): click to copy what that app expects, with next steps | `Sources/MCPApps.swift`, `docs/MCP-APPS.md` |
+| How Wispr Flow and Grammarly work on the phone, from public sources | `docs/REFERENCE-WISPR-GRAMMARLY.md` |
 | One command that checks every function | `scripts/smoke.sh` |
 
 ## Next, in the order I would do them

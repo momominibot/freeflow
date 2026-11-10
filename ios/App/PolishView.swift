@@ -15,6 +15,8 @@ final class Router: ObservableObject {
         if CommandLine.arguments.contains("--show-polish") {
             tab = .polish
             draft = PhonePolish.example
+        } else if CommandLine.arguments.contains("--show-polish-empty") {
+            tab = .polish   // the empty tab, with Rhea's picture in the corner of the box
         }
     }
 
@@ -253,6 +255,12 @@ struct PolishView: View {
                     Text("Write or paste something here…")
                         .font(.system(size: 17)).foregroundColor(RT.ink3)
                         .padding(.horizontal, 12).padding(.vertical, 12).allowsHitTesting(false)
+                }
+                if p.text.isEmpty, let cat = CatArt.image("learning") {
+                    Image(uiImage: cat).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
+                        .frame(width: 92, height: 92)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .padding(8).allowsHitTesting(false).accessibilityHidden(true)
                 }
             }
             .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(RT.paper2))

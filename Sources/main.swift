@@ -844,7 +844,50 @@ if args.contains("--test") {
     check("code speech: ordinary words with dot and slash are left alone", CodeSpeech.apply("The dot com bubble and the slash and burn farmers."), "The dot com bubble and the slash and burn farmers.")
     check("code speech: works inside spoken commands", { let c = SpokenCommands.parse("Camel case user name. Press enter."); return c.pressEnter && c.text.hasPrefix("userName") }())
 
-    check("polish: Rewriter and the guard agree on numbers", Rewriter.numbers("75,000 and 3") == RewriteGuard.numbers("75,000 and 3"))
+    // Cute-cat look: Rhea and the Rhythme cats are in the bundle for every part of the app that has a picture.
+    let catSquares = ["hello", "learning", "meetings", "modes", "files", "snippets", "words", "sleepy", "kitten"]
+    check("cat look: every square picture is bundled", catSquares.allSatisfy { Art.catImage($0) != nil })
+    check("cat look: the full-figure pictures are bundled", ["hero-hug", "hero-listen", "hero-note", "hero-sleep"].allSatisfy { Art.catImage($0) != nil })
+    check("cat look: the pearly mascot pictures are still bundled for the plain look", ["hello", "learning", "meetings", "modes", "files", "snippets", "words", "sleepy"].allSatisfy { name in
+        guard let base = Bundle.main.resourceURL else { return false }
+        return FileManager.default.fileExists(atPath: base.appendingPathComponent("Brand/art/\(name).webp").path)
+    })
+
+    // MCP page: every app copies what that app expects.
+    let mcpScript = "/Applications/FreeFlow.app/Contents/Resources/freeflow-mcp.py"
+    func mcpText(_ id: String, _ script: String = mcpScript) -> String { MCPApps.app(id)?.text(script) ?? "" }
+    func mcpObject(_ id: String) -> [String: Any]? {
+        guard let data = mcpText(id).data(using: .utf8) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+    func mcpEntry(_ id: String, key: String) -> [String: Any]? {
+        guard let root = mcpObject(id) else { return nil }
+        return ((key.isEmpty ? root : root[key] as? [String: Any]) ?? [:])["freeflow"] as? [String: Any]
+    }
+    check("mcp: the app ids are unique", Set(MCPApps.all.map { $0.id }).count == MCPApps.all.count)
+    check("mcp: Claude Code copies the documented one-liner", mcpText("claudecode"), "claude mcp add --scope user freeflow -- /usr/bin/env python3 \"\(mcpScript)\"")
+    check("mcp: Codex copies codex mcp add", mcpText("codex"), "codex mcp add freeflow -- /usr/bin/env python3 \"\(mcpScript)\"")
+    check("mcp: Gemini adds it for every project", mcpText("gemini").hasPrefix("gemini mcp add -s user freeflow /usr/bin/env python3 "))
+    check("mcp: Hermes uses --args last", mcpText("hermes").hasSuffix("--args python3 \"\(mcpScript)\""))
+    check("mcp: Claude Desktop copies an mcpServers entry", (mcpEntry("claude", key: "mcpServers")?["command"] as? String) == "/usr/bin/env")
+    check("mcp: Cursor says stdio", (mcpEntry("cursor", key: "mcpServers")?["type"] as? String) == "stdio")
+    check("mcp: Cline keeps the server enabled", (mcpEntry("cline", key: "mcpServers")?["disabled"] as? Bool) == false)
+    check("mcp: Trae and the generic entry are plain mcpServers", mcpEntry("trae", key: "mcpServers") != nil && mcpEntry("other", key: "mcpServers") != nil)
+    check("mcp: Zed uses context_servers, not mcpServers", mcpEntry("zed", key: "context_servers") != nil && mcpObject("zed")?["mcpServers"] == nil)
+    check("mcp: Warp gets the bare server entry", mcpEntry("warp", key: "") != nil && mcpObject("warp")?["mcpServers"] == nil)
+    check("mcp: ChatGPT and Doubao copy the fields to fill in", ["chatgpt", "doubao"].allSatisfy { mcpText($0).contains("Type: STDIO") && mcpText($0).hasSuffix("Arguments: \(mcpScript)") })
+    check("mcp: VS Code copies code --add-mcp with valid JSON", {
+        let t = mcpText("vscode")
+        guard t.hasPrefix("code --add-mcp '"), t.hasSuffix("'") else { return false }
+        let body = String(t.dropFirst("code --add-mcp '".count).dropLast())
+        guard let obj = (try? JSONSerialization.jsonObject(with: Data(body.utf8))) as? [String: Any] else { return false }
+        return obj["name"] as? String == "freeflow" && obj["type"] as? String == "stdio"
+    }())
+    check("mcp: a path with a quote is made safe for the shell", mcpText("claudecode", "/tmp/it's here/freeflow-mcp.py").hasSuffix("python3 '/tmp/it'\\''s here/freeflow-mcp.py'"))
+    check("mcp: every bundled brand picture is there", MCPApps.all.compactMap { $0.glyph }.allSatisfy { Art.appLogo($0) != nil })
+    check("mcp: each app has steps and no em dash anywhere", MCPApps.all.allSatisfy { !$0.steps.isEmpty && !$0.steps.contains("\u{2014}") && !$0.name.contains("\u{2014}") })
+
+    check("polish: Rewriter and the guard agree on numbers",Rewriter.numbers("75,000 and 3") == RewriteGuard.numbers("75,000 and 3"))
     check("polish: a short word list is offered without Harper", HarperEngine.isLinked || !GrammarChecker.synonyms(for: "good").isEmpty)
     check("polish: synonyms of good are the hand-picked ones", GrammarChecker.synonyms(for: "good").first == "great")
     check("polish: synonyms of nothing are nothing", GrammarChecker.synonyms(for: "  ").isEmpty && GrammarChecker.synonyms(for: "two words").isEmpty)

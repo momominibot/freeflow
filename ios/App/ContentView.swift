@@ -10,6 +10,10 @@ struct ContentView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 22) {
+                    CatPicture(name: CatArt.hero(for: d.phase), height: 190)
+                        .id(CatArt.hero(for: d.phase))
+                        .transition(.opacity)
+                        .animation(.easeInOut(duration: 0.25), value: CatArt.hero(for: d.phase))
                     statusLine
                     RecordButton(phase: d.phase, level: d.level)
                         .gesture(DragGesture(minimumDistance: 0)

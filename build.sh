@@ -36,11 +36,16 @@ cp assets/fonts/*.ttf assets/fonts/LICENSE.txt "$APP/Contents/Resources/Fonts/"
 chmod +x "$APP/Contents/Resources/install-qwen-engine.sh"
 
 # The logo and app icon are drawn by scripts/make_logo.py and kept in assets/brand.
-cp assets/brand/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp assets/brand/AppIcon-cat.icns "$APP/Contents/Resources/AppIcon.icns"   # the cute-cat icon (scripts/art/make_cat_icon.py); AppIcon.icns is the pearly bubble
 mkdir -p "$APP/Contents/Resources/Brand"
-cp assets/brand/logo-mark.png "$APP/Contents/Resources/Brand/"
+cp assets/brand/logo-mark.png assets/brand/logo-icon.png "$APP/Contents/Resources/Brand/"
 mkdir -p "$APP/Contents/Resources/Brand/art"
 cp assets/art/*.webp "$APP/Contents/Resources/Brand/art/" 2>/dev/null || true
+mkdir -p "$APP/Contents/Resources/Brand/art/cats"
+cp assets/art/cats/*.webp "$APP/Contents/Resources/Brand/art/cats/" 2>/dev/null || true
+# Brand pictures for the MCP page (scripts/art/make_app_logos.sh makes them).
+mkdir -p "$APP/Contents/Resources/Brand/apps"
+cp assets/brand/apps/*.png "$APP/Contents/Resources/Brand/apps/" 2>/dev/null || true
 
 # A real signing identity keeps macOS permissions across rebuilds; ad-hoc works but resets them.
 IDENTITY=$(security find-identity -v -p codesigning | awk '/Developer ID Application/ {print $2; exit}')

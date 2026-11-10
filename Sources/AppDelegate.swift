@@ -120,6 +120,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         statusItem.menu = menu
         refreshIcon()
+        NotificationCenter.default.addObserver(forName: .freeflowLookChanged, object: nil, queue: .main) { [weak self] _ in self?.refreshIcon(); self?.applyDockIcon() }
+        applyDockIcon()
 
         hotkey.onDown = { [weak self] in self?.talkDown(.dictate) }
         hotkey.onUp = { [weak self] in self?.talkUp() }
@@ -750,9 +752,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// The two dots and a smile from the Rhythme corner, drawn as a template image so the menu bar tints it.
     private func faceIcon(talking: Bool, flat: Bool) -> NSImage {
+        let cat = Settings.shared.catTheme
         let img = NSImage(size: NSSize(width: 22, height: 16), flipped: false) { _ in
             NSColor.black.setFill()
             NSColor.black.setStroke()
+            if cat {
+                // The cute-cat look: a solid cat head with the eyes and mouth cut out of it, so the menu bar tints it.
+                NSBezierPath(ovalIn: NSRect(x: 1.4, y: 0.5, width: 19.2, height: 13.0)).fill()
+                for (foot, tip, inner) in [(2.4, 3.2, 8.8), (19.6, 18.8, 13.2)] as [(CGFloat, CGFloat, CGFloat)] {
+                    let ear = NSBezierPath()
+                    ear.move(to: NSPoint(x: foot, y: 8.6))
+                    ear.line(to: NSPoint(x: tip, y: 15.6))
+                    ear.line(to: NSPoint(x: inner, y: 12.4))
+                    ear.close()
+                    ear.lineWidth = 0.8
+                    ear.lineJoinStyle = .round
+                    ear.fill()
+                    ear.stroke()
+                }
+                NSGraphicsContext.current?.compositingOperation = .clear
+                NSBezierPath(ovalIn: NSRect(x: 5.0, y: 6.0, width: 3.0, height: 3.4)).fill()
+                NSBezierPath(ovalIn: NSRect(x: 14.0, y: 6.0, width: 3.0, height: 3.4)).fill()
+                if talking {
+                    NSBezierPath(ovalIn: NSRect(x: 9.7, y: 2.2, width: 2.6, height: 3.4)).fill()
+                } else {
+                    let m = NSBezierPath()
+                    m.lineWidth = 1.2
+                    m.lineCapStyle = .round
+                    if flat {
+                        m.move(to: NSPoint(x: 9.2, y: 3.8))
+                        m.line(to: NSPoint(x: 12.8, y: 3.8))
+                    } else {
+                        m.move(to: NSPoint(x: 8.6, y: 4.6))
+                        m.curve(to: NSPoint(x: 13.4, y: 4.6), controlPoint1: NSPoint(x: 9.6, y: 2.0), controlPoint2: NSPoint(x: 12.4, y: 2.0))
+                    }
+                    m.stroke()
+                }
+                NSGraphicsContext.current?.compositingOperation = .sourceOver
+                return true
+            }
             NSBezierPath(ovalIn: NSRect(x: 3.2, y: 8.4, width: 3.8, height: 3.8)).fill()
             NSBezierPath(ovalIn: NSRect(x: 15.0, y: 8.4, width: 3.8, height: 3.8)).fill()
             if talking {
@@ -774,6 +812,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         img.isTemplate = true
         return img
+    }
+
+    /// The Dock icon follows the look: the bundle's cat icon, or the pearly bubble when the plain look is chosen.
+    private func applyDockIcon() {
+        if settings.catTheme {
+            NSApp.applicationIconImage = nil
+        } else if let url = Bundle.main.resourceURL?.appendingPathComponent("Brand/logo-icon.png"), let bubble = NSImage(contentsOf: url) {
+            NSApp.applicationIconImage = bubble
+        }
     }
 
     private func refreshIcon() {
@@ -1290,21 +1337,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func copyMCPCommand() {
-        let script = (Bundle.main.resourcePath ?? "/Applications/FreeFlow.app/Contents/Resources") + "/freeflow-mcp.py"
+        guard let app = MCPApps.app("claudecode") else { return }
         settings.mcpCopied = true
-        Inserter.copy("claude mcp add --scope user freeflow -- /usr/bin/env python3 \"\(script)\"")
+        Inserter.copy(app.text(MCPApps.scriptPath))
         overlay.flash("Command copied · paste it in a terminal, then Claude can search your dictations", seconds: 4)
     }
 
     /// The same server as a JSON entry, for Claude Desktop, Cursor and other apps that read an mcpServers list.
     private func copyMCPConfig() {
-        let script = (Bundle.main.resourcePath ?? "/Applications/FreeFlow.app/Contents/Resources") + "/freeflow-mcp.py"
-        let entry: [String: Any] = ["mcpServers": ["freeflow": ["command": "/usr/bin/env", "args": ["python3", script]]]]
-        if let data = try? JSONSerialization.data(withJSONObject: entry, options: [.prettyPrinted, .sortedKeys]),
-           let text = String(data: data, encoding: .utf8) {
-            Inserter.copy(text)
-            overlay.flash("MCP config copied · add it to your app's MCP settings", seconds: 3.5)
-        }
+        guard let app = MCPApps.app("other") else { return }
+        Inserter.copy(app.text(MCPApps.scriptPath))
+        overlay.flash("MCP config copied · add it to your app's MCP settings", seconds: 3.5)
     }
 
     @objc private func openMicSettings() {
