@@ -186,6 +186,28 @@ final class Rewriter {
         }
     }
 
+    /// Polish: applies one of the built-in rewrite modes (shorter, friendlier ...) to `text`. A rewrite that changed a number,
+    /// dropped one of your words or switched language is thrown away (RewriteGuard) instead of being shown.
+    func rewrite(_ text: String, mode: RewriteMode, terms: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        let words = TextCleaner.wordCount(text)
+        let temperature: Double = mode == .fix ? 0.1 : (mode == .rephrase ? 0.6 : 0.3)
+        let body: [String: Any] = [
+            "model": model, "stream": false, "think": false, "keep_alive": "60m",
+            "options": ["temperature": temperature, "num_predict": min(2000, 200 + words * 4)],
+            "messages": [["role": "system", "content": RewritePrompt.system],
+                         ["role": "user", "content": RewritePrompt.user(text, mode: mode, terms: terms)]],
+        ]
+        post("api/chat", body, timeout: 60) { result in
+            completion(result.flatMap { raw -> Result<String, Error> in
+                let out = Self.tidy(raw)
+                guard RewriteGuard.looksLikeRewrite(original: text, rewritten: out, mode: mode, protectedTerms: terms) else {
+                    return .failure(FFError(message: "That rewrite changed something it should not have (a number, one of your words or the language), so it was thrown away. Try again."))
+                }
+                return .success(out)
+            })
+        }
+    }
+
     // MARK: - Meeting notes
 
     static let summarySystem = """
@@ -300,19 +322,11 @@ final class Rewriter {
     }
 
     /// Digit runs in order, with thousands separators removed, so 75,000 and 75000 agree.
-    static func numbers(_ s: String) -> [String] {
-        let flat = s.replacingOccurrences(of: "(?<=\\d),(?=\\d{3})", with: "", options: .regularExpression)
-        return flat.split { !$0.isNumber }.map(String.init)
-    }
+    static func numbers(_ s: String) -> [String] { RewriteGuard.numbers(s) }
 
-    static func isCJK(_ c: Character) -> Bool {
-        c.unicodeScalars.contains { u in
-            (0x4E00...0x9FFF).contains(u.value) || (0x3400...0x4DBF).contains(u.value)
-                || (0x3040...0x30FF).contains(u.value) || (0xAC00...0xD7AF).contains(u.value)
-        }
-    }
+    static func isCJK(_ c: Character) -> Bool { RewriteGuard.isCJK(c) }
 
-    static func cjkCount(_ s: String) -> Int { s.filter(isCJK).count }
+    static func cjkCount(_ s: String) -> Int { RewriteGuard.cjkCount(s) }
 
     private static func contentWords(_ s: String) -> Set<String> {
         let stop: Set<String> = ["the", "a", "an", "and", "or", "to", "of", "in", "on", "at", "for", "it", "is", "are",

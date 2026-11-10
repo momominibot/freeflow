@@ -98,12 +98,21 @@ stage_units() {
   oks=$(grep -c '^ok' "$WORK/unit.log"); fails=$(grep -c '^FAIL' "$WORK/unit.log")
   if [ $rc -eq 0 ] && [ "$fails" = 0 ] && [ "$oks" -ge 150 ]; then ok "$oks unit checks pass (text, snippets, modes, meetings, scratchpad, insights, import, export, appearance)"
   else bad "unit checks: $oks ok, $fails failed, exit $rc"; grep '^FAIL' -A2 "$WORK/unit.log" | head -20; fi
+  # Polish: the checks that do not depend on the engine always run; the Harper ones run when the library is linked in.
+  local pol; pol=$(grep -cE '^ok +polish:' "$WORK/unit.log")
+  [ "$pol" -ge 40 ] && ok "$pol Polish checks pass (spelling, grammar, protected words, rewrites guard, synonyms)" || bad "Polish checks: only $pol ran"
+  if [ -f native/harper/libharper-macos.a ]; then
+    grep -q "Grammar checker: Harper" "$WORK/build.log" && grep -qE '^ok +harper:' "$WORK/unit.log" && ok "Harper is linked and its checks pass" || bad "native/harper exists but Harper is not linked or its checks did not run"
+  else
+    skp "Harper library not built (scripts/build-harper.sh macos); the built-in checker was tested instead"
+  fi
+  [ -s ThirdPartyNotices.txt ] && [ -s ios/App/Resources/ThirdPartyNotices.txt ] && cmp -s ThirdPartyNotices.txt ios/App/Resources/ThirdPartyNotices.txt && grep -q "Apache License" ThirdPartyNotices.txt && ok "the open-source notices exist and match the copy inside the iPhone app" || bad "ThirdPartyNotices.txt is missing, empty or out of step with ios/App/Resources"
 }
 
 stage_scripts() {
   stage "Scripts"
   local f
-  for f in build.sh install.sh scripts/smoke.sh scripts/install-qwen-engine.sh; do [ -f "$f" ] && check "bash syntax: $f" bash -n "$f"; done
+  for f in build.sh install.sh scripts/smoke.sh scripts/install-qwen-engine.sh scripts/build-harper.sh; do [ -f "$f" ] && check "bash syntax: $f" bash -n "$f"; done
   for f in scripts/*.py scripts/art/*.py scripts/tools/*.py; do check "python syntax: $f" "$PY" -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$f"; done
   if tmo 60 python3 scripts/freeflow-mcp.py --selfcheck >"$WORK/mcp.log" 2>&1; then ok "MCP server selfcheck"; else bad "MCP server selfcheck"; tail -5 "$WORK/mcp.log"; fi
   grep -q workday_summary "$WORK/mcp.log" && ok "the MCP server offers the workday summary" || bad "workday_summary is not in the MCP tool list"
@@ -167,7 +176,7 @@ stage_render() {
   if tmo 400 "$BIN" --render-ui "$WORK/ui" >"$WORK/render.log" 2>&1; then ok "--render-ui finishes"; else bad "--render-ui"; fi
   local light dark
   light=$(ls "$WORK/ui"/*.png 2>/dev/null | wc -l | tr -d ' '); dark=$(ls "$WORK/ui/dark"/*.png 2>/dev/null | wc -l | tr -d ' ')
-  [ "$light" -ge 23 ] && [ "$light" = "$dark" ] && ok "$light light and $dark dark pictures (10 pages, 7 settings tabs, 6 bar states)" || bad "pictures: $light light, $dark dark"
+  [ "$light" -ge 24 ] && [ "$light" = "$dark" ] && ok "$light light and $dark dark pictures (11 pages, 7 settings tabs, 6 bar states)" || bad "pictures: $light light, $dark dark"
   if "$PY" -c "import PIL" 2>/dev/null; then
     "$PY" - "$WORK/ui" <<'EOF' >"$WORK/pix.log" 2>&1
 import sys, glob, os

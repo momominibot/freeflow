@@ -3,9 +3,11 @@ import Foundation
 /// What the speech model heard, turned into the text you get. This is the Mac app's own clean-up (Sources/Text.swift):
 /// the dictionary, fillers, bracket noise, the hallucinated "thank you" a silent take produces, and "new paragraph".
 enum PhonePipeline {
-    static func finish(_ raw: String, dictionary: String, removeFillers: Bool, quiet: Bool) -> String {
+    static func finish(_ raw: String, dictionary: String, removeFillers: Bool, quiet: Bool, fixSlips: Bool = false) -> String {
         let vocab = Vocabulary.parse(dictionary)
-        let cleaned = TextCleaner.clean(raw, removeFillers: removeFillers, vocab: vocab, quiet: quiet)
+        var cleaned = TextCleaner.clean(raw, removeFillers: removeFillers, vocab: vocab, quiet: quiet)
+        // Only slips with one clear answer (a/an, a lowercase "I", a doubled word); spelling is left alone.
+        if fixSlips, !cleaned.isEmpty { cleaned = GrammarChecker.autoFix(cleaned, words: vocab.terms, onlyClear: true).text }
         return SpokenCommands.parse(cleaned).text
     }
 

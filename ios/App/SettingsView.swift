@@ -40,10 +40,27 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Picker("Spelling", selection: $d.variety) {
+                        Text("British").tag(1)
+                        Text("American").tag(0)
+                        Text("Canadian").tag(2)
+                        Text("Australian").tag(3)
+                        Text("Indian").tag(4)
+                    }
+                    Toggle("Fix clear slips as I talk", isOn: $d.fixSlips)
+                } header: { Text("Writing") } footer: {
+                    Text("Spelling sets which words the Polish tab calls mistakes (colour or color). Clear slips are a wrong a or an, a lowercase \"I\" and a doubled word; spelling is left alone.")
+                }
+
+                Section {
                     NavigationLink("Dictionary") { DictionaryView() }
                     Button("Write down an audio file…") { pickFile = true }
                 } footer: {
                     Text("The dictionary uses the same file as FreeFlow on the Mac, and shows in the Files app under On My iPhone › FreeFlow.")
+                }
+
+                Section {
+                    NavigationLink("About and licences") { AcknowledgementsView() }
                 }
 
                 Section {

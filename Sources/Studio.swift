@@ -168,11 +168,12 @@ enum ListFile {
 
 final class StudioModel: ObservableObject {
     enum Page: String, CaseIterable, Identifiable {
-        case home, meetings, insights, dictionary, snippets, modes, transforms, scratchpad, workday, learning, help
+        case home, polish, meetings, insights, dictionary, snippets, modes, transforms, scratchpad, workday, learning, help
         var id: String { rawValue }
         var title: String {
             switch self {
             case .home: return "Home"
+            case .polish: return "Polish"
             case .meetings: return "Meetings"
             case .insights: return "Stats"
             case .dictionary: return "Words"
@@ -188,6 +189,7 @@ final class StudioModel: ObservableObject {
         var icon: String {
             switch self {
             case .home: return "mic"
+            case .polish: return "checkmark.seal"
             case .meetings: return "record.circle"
             case .insights: return "chart.bar"
             case .dictionary: return "character.book.closed"
@@ -325,6 +327,7 @@ struct StudioView: View {
                     Group {
                         switch model.page {
                         case .home: HomePage(model: model)
+                        case .polish: PolishPage(model: model)
                         case .meetings: MeetingsPage(model: model)
                         case .insights: InsightsPage(model: model)
                         case .dictionary: DictionaryPage(model: model)
@@ -384,7 +387,7 @@ struct StudioView: View {
 
 struct Sidebar: View {
     @ObservedObject var model: StudioModel
-    private let top: [StudioModel.Page] = [.home, .meetings, .insights, .dictionary, .snippets, .modes, .transforms, .scratchpad, .learning, .workday]
+    private let top: [StudioModel.Page] = [.home, .polish, .meetings, .insights, .dictionary, .snippets, .modes, .transforms, .scratchpad, .learning, .workday]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -932,10 +935,11 @@ enum UIShots {
         bridge.status = { ("Whisper · offline, no word limit", true) }
         bridge.aiReady = { true }
         let model = StudioModel(bridge: bridge)
+        PolishModel.renderSample = "i think we should of sent the the invoice to the client yesterday. Its a very good chance that they will recieve it in order to review it before friday, but i am not sure."
         for page in StudioModel.Page.allCases {
             model.page = page
             // The Meetings page is long; draw it tall so the notes show.
-            let tall: [StudioModel.Page: CGFloat] = [.meetings: 1500, .insights: 1000, .help: 1000, .scratchpad: 800]
+            let tall: [StudioModel.Page: CGFloat] = [.meetings: 1500, .insights: 1000, .help: 1000, .scratchpad: 800, .polish: 1700]
             let size = NSSize(width: shotWidth, height: tall[page] ?? 740)
             png(NSHostingView(rootView: StudioView(model: model)), size: size, to: dir.appendingPathComponent("page-\(page.rawValue).png"))
         }

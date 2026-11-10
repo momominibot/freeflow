@@ -21,6 +21,8 @@ targets:
       - path: App
       # the same text clean-up the Mac app uses (dictionary, fillers, spoken commands), so both stay in step
       - path: ../Sources/Text.swift
+      # the grammar and wording checker the Mac app uses (Harper, built in), so both give the same suggestions
+      - path: ../Sources/Polish.swift
     dependencies:
       - package: ArgmaxOSS
         product: WhisperKit
@@ -32,6 +34,8 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSMicrophoneUsageDescription: FreeFlow listens while you dictate. The audio is turned into text on this iPhone and is never sent anywhere.
         UIFileSharingEnabled: true
+        # only the encryption iOS itself provides (the model download over https), which needs no export paperwork
+        ITSAppUsesNonExemptEncryption: false
         LSSupportsOpeningDocumentsInPlace: true
     settings:
       base:
@@ -40,6 +44,12 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
+        # Harper (Apache-2.0) is a Rust library: scripts/build-harper.sh builds native/harper/libharper-{ios,iossim}.a
+        SWIFT_OBJC_BRIDGING_HEADER: ../rust/harper-ffi/harper.h
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) HARPER"
+        OTHER_LDFLAGS: "$(inherited) -lc++"
+        "OTHER_LDFLAGS[sdk=iphoneos*]": "$(inherited) -lc++ $(SRCROOT)/../native/harper/libharper-ios.a"
+        "OTHER_LDFLAGS[sdk=iphonesimulator*]": "$(inherited) -lc++ $(SRCROOT)/../native/harper/libharper-iossim.a"
   FreeFlowPhoneTests:
     type: bundle.unit-test
     platform: iOS

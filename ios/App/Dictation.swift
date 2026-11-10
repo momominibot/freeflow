@@ -23,6 +23,10 @@ final class Dictation: ObservableObject {
     @Published var language: SpeechLanguage { didSet { defaults.set(language.rawValue, forKey: "language") } }
     @Published var removeFillers: Bool { didSet { defaults.set(removeFillers, forKey: "removeFillers") } }
     @Published var autoCopy: Bool { didSet { defaults.set(autoCopy, forKey: "autoCopy") } }
+    /// 0 American, 1 British, 2 Canadian, 3 Australian, 4 Indian (the same numbers the Mac app uses).
+    @Published var variety: Int { didSet { defaults.set(variety, forKey: "variety"); HarperEngine.dialect = variety } }
+    /// Off unless asked for: a wrong a/an, a lowercase "I" or a doubled word is fixed as the words are written.
+    @Published var fixSlips: Bool { didSet { defaults.set(fixSlips, forKey: "fixSlips") } }
     @Published var dictionaryText: String { didSet { try? dictionaryText.write(to: Paths.dictionary, atomically: true, encoding: .utf8) } }
 
     private let defaults = UserDefaults.standard
@@ -37,6 +41,10 @@ final class Dictation: ObservableObject {
         language = SpeechLanguage(rawValue: defaults.string(forKey: "language") ?? "") ?? .english
         removeFillers = defaults.object(forKey: "removeFillers") as? Bool ?? true
         autoCopy = defaults.object(forKey: "autoCopy") as? Bool ?? true
+        let savedVariety = defaults.object(forKey: "variety") as? Int ?? 1
+        variety = savedVariety
+        fixSlips = defaults.object(forKey: "fixSlips") as? Bool ?? false
+        HarperEngine.dialect = savedVariety
         if !FileManager.default.fileExists(atPath: Paths.dictionary.path) {
             try? Vocabulary.template.write(to: Paths.dictionary, atomically: true, encoding: .utf8)
         }
@@ -137,7 +145,7 @@ final class Dictation: ObservableObject {
     }
 
     private func finish(raw: String, seconds: Double, quiet: Bool) {
-        let text = PhonePipeline.finish(raw, dictionary: dictionaryText, removeFillers: removeFillers, quiet: quiet)
+        let text = PhonePipeline.finish(raw, dictionary: dictionaryText, removeFillers: removeFillers, quiet: quiet, fixSlips: fixSlips)
         guard !text.isEmpty else { result = nil; return }
         let entry = Entry(text: text, raw: raw, seconds: seconds, model: model.rawValue)
         result = entry

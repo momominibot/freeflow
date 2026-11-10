@@ -6,3 +6,7 @@ docs/reviews/*-input.md
 __pycache__/
 assets/art/raw/
 assets/art/raw-logo/
+
+# Harper grammar checker: cloned sources and built libraries (rebuilt by scripts/build-harper.sh)
+.harper-build/
+native/

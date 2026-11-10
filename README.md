@@ -46,6 +46,19 @@ To check the look without showing anything on screen: `FreeFlow.app/Contents/Mac
 
 Both live in `modes.json` in the support folder.
 
+### Polish: spelling, grammar, clearer wording and word swaps
+
+What people love in Grammarly, kept on this Mac: nothing you write leaves it.
+
+- **Polish page** (window › Polish): write or paste, and suggestions appear a moment after you stop. Each card shows the problem in its sentence, says why in plain words, and has the fix as a button (**Spelling**, **Grammar**, **Punctuation**, **Clarity**, **Style**; filter by kind). **Ignore** a suggestion or **Add to dictionary** for a name. **Fix 7 mistakes** takes every clear spelling, grammar and punctuation fix at once. Above the cards: word count, reading time, how easy it reads, and the tone it comes across in.
+- **Rewrite it**: Fix mistakes, Make it clearer, Shorter, Rephrase, Friendlier, More professional, More confident. It uses the local AI, shows the result for you to **Use this**, **Try again** or **Copy**, and throws a rewrite away if it changed a number, one of your dictionary words or the language.
+- **Find another word**: a word you keep using, with alternatives to copy (ranked by how close they are in meaning).
+- **Anywhere in the Mac**: the menu bar menu has **Fix spelling and grammar in selected text** and **Rewrite selected text** (the seven modes above, then your saved Rewrites).
+- **While you dictate** (Settings › Writing, off until you switch it on): **Fix clear slips in what I say** repairs a wrong a/an, a lowercase "I" and a doubled word. Spelling is left alone. **Spelling** chooses British (the default, used in Singapore), American or Australian.
+- Your dictionary and your team's are never called mistakes, and URLs, e-mail addresses and symbol words such as `EMIS+` are skipped.
+
+The checker is [Harper](https://github.com/Automattic/harper) (Apache-2.0, by Automattic), compiled into the app, so it works offline and fast. `scripts/build-harper.sh` builds it once (needs Rust; `./build.sh` links it automatically when `native/harper/` exists and `./build.sh release` builds it if missing). Without it FreeFlow still builds and falls back to a smaller built-in rule list. Both engines run the same checks in `FreeFlow --test`. Licences: `ThirdPartyNotices.txt` (regenerate with `python3 scripts/gen-notices.py`).
+
 ### The pictures
 
 Eight painted pictures of the mascot (waving with a microphone, reading, holding a note, with a paintbrush, chatting, hugging a cassette, watering a sprout, sleeping) show in the empty spots and headers of the window. They were made once with Seedream 5 pro in Rhythme's watercolour style by `scripts/art/run_art.py` (one guarded run, prompts in `scripts/art/prompts.json`), then `scripts/art/keypaper.py` took the paper backdrop out. The finished `assets/art/*.webp` are bundled by `build.sh`; the 1.6 MB originals in `assets/art/raw/` stay out of git. A missing picture falls back to the little face.
@@ -185,6 +198,7 @@ brew install whisper-cpp
 ./build.sh            # builds build/FreeFlow.app and runs the text checks
 ./build.sh install    # also copies to /Applications and launches
 ./build.sh release    # also makes dist/FreeFlow-<version>.zip with install.sh
+scripts/build-harper.sh macos   # once, optional: the Harper grammar checker (needs Rust). Without it a smaller built-in checker is used
 ```
 
 Model download (verify the checksum):
@@ -251,7 +265,7 @@ Live test without a human at the mic: `defaults write com.momominibot.freeflow d
 ## Not done
 
 - Ideas not built yet are in `docs/IDEAS.md` (a stats page with a speaking-speed gauge and streak calendar, tone by category, rewrites that run by themselves after dictation, a meeting list with questions across all your notes).
-- No mobile app, no calendar connection and no subscription: FreeFlow is a Mac app that keeps everything on the Mac.
+- No calendar connection and no subscription: FreeFlow keeps everything on your device. The iPhone app (`ios/`, see `ios/README.md`) has talk and Polish but not yet a keyboard that dictates into any app.
 - Learning is lexical (words and swaps). Retraining the speech model on your voice from your kept recordings and corrections is not built; it would be a separate, heavier step.
 - Learning from fixes was tested live against TextEdit and by unit checks, not yet across browsers, Slack or Electron apps; where an app hides its text, use Correct my last dictation.
 - Not tested with a human voice into the physical microphone; tests played speech through the speakers.

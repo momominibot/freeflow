@@ -548,6 +548,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let expanded = Snippet.apply(p.snippets, to: base)
         let snippetHit = expanded != base
         base = expanded
+        // Off unless asked for: clear slips (a/an, a lowercase "I", a doubled word) are fixed before the text is typed.
+        if settings.fixGrammarInDictation, level != .none, !snippetHit {
+            HarperEngine.dialect = settings.spellingVariety
+            let slipsFixed = GrammarChecker.autoFix(base, words: p.vocab.terms, onlyClear: true)
+            if slipsFixed.fixed > 0 {
+                log("take #\(id) grammar: \(slipsFixed.fixed) slip(s) fixed")
+                base = slipsFixed.text
+            }
+        }
         let cmd = SpokenCommands.parse(base)
         var outcome = Outcome(text: cmd.text, raw: TextCleaner.raw(raw, quiet: quiet), mode: level.rawValue, app: app, pressEnter: cmd.pressEnter)
         outcome.secs = take.duration
@@ -824,13 +833,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let last = lastOutcome, last.mode != "command", !last.text.isEmpty {
             menu.addItem(item("Correct my last dictation…", #selector(correctLast), symbol: "sparkles"))
         }
+        menu.addItem(item("Fix spelling and grammar in selected text", #selector(fixSelection), symbol: "checkmark.seal"))
         let transforms = ModeStore.load().transforms
-        if !transforms.isEmpty {
+        do {
             let sub = NSMenu()
-            for t in transforms {
-                let it = item(t.name, #selector(runTransformItem(_:)))
-                it.representedObject = t.id
+            for mode in RewriteMode.allCases where mode != .fix {
+                let it = item(mode.title, #selector(runRewriteItem(_:)), symbol: mode.symbol)
+                it.representedObject = mode.rawValue
                 sub.addItem(it)
+            }
+            if !transforms.isEmpty {
+                sub.addItem(.separator())
+                for t in transforms {
+                    let it = item(t.name, #selector(runTransformItem(_:)))
+                    it.representedObject = t.id
+                    sub.addItem(it)
+                }
             }
             sub.addItem(.separator())
             sub.addItem(info("Select text in any app first"))
@@ -913,6 +931,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func runTransformItem(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String, let t = ModeStore.load().transforms.first(where: { $0.id == id }) else { return }
         runTransform(t)
+    }
+
+    /// Puts `text` in place of the selection, or copies it when the app in front cannot be typed into.
+    private func replaceSelection(_ text: String, focus: Inserter.Focus, label: String) {
+        if focus.editable, AXIsProcessTrusted() {
+            Inserter.paste(text) { self.overlay.flash("\(label) · done", seconds: 1.5) }
+        } else {
+            Inserter.copy(text)
+            self.overlay.flash("\(label) · copied, press ⌘V", seconds: 3)
+        }
+    }
+
+    /// Instant and offline: the first suggestion for every spelling, grammar and punctuation mistake in the selection.
+    @objc private func fixSelection() {
+        Inserter.readFocus { [weak self] focus in
+            guard let self = self else { return }
+            guard !focus.selection.isEmpty else { return self.overlay.flash("Select some text first", seconds: 3) }
+            HarperEngine.dialect = self.settings.spellingVariety
+            let result = GrammarChecker.autoFix(focus.selection, words: Personalization.load().vocab.terms)
+            guard result.fixed > 0, result.text != focus.selection else { return self.overlay.flash("Nothing to fix", seconds: 2) }
+            self.log("fix selection: \(result.fixed) fixes in \(TextCleaner.wordCount(focus.selection)) words")
+            self.replaceSelection(result.text, focus: focus, label: result.fixed == 1 ? "1 fix" : "\(result.fixed) fixes")
+        }
+    }
+
+    @objc private func runRewriteItem(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let mode = RewriteMode(rawValue: raw) else { return }
+        runRewrite(mode)
+    }
+
+    /// One of the built-in rewrites (shorter, friendlier ...) of the selection, refused if it changed a number or one of your words.
+    private func runRewrite(_ mode: RewriteMode) {
+        guard ai.cachedAvailable || ai.isAvailable() else { return overlay.flash("Rewrites need the local AI (start Ollama)", seconds: 3) }
+        Inserter.readFocus { [weak self] focus in
+            guard let self = self else { return }
+            guard !focus.selection.isEmpty else { return self.overlay.flash("Select some text first, then choose \(mode.title)", seconds: 3) }
+            self.overlay.showTranscribing(label: "\(mode.title)…")
+            self.ai.rewrite(focus.selection, mode: mode, terms: Personalization.load().vocab.terms) { result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(let text) where !text.isEmpty:
+                        self.log("rewrite \(mode.rawValue): \(TextCleaner.wordCount(focus.selection)) words in, \(TextCleaner.wordCount(text)) out")
+                        self.replaceSelection(text, focus: focus, label: mode.title)
+                    case .success:
+                        self.overlay.flash("The AI returned nothing", seconds: 2)
+                    case .failure(let e):
+                        self.overlay.flash("\(mode.title) failed · \(e.localizedDescription)", seconds: 4)
+                    }
+                }
+            }
+        }
     }
 
     /// Applies a saved prompt to the text selected in the app in front, and puts the result in its place.

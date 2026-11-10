@@ -11,7 +11,20 @@ VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Info.pli
 rm -rf build
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-swiftc -O -swift-version 5 -target arm64-apple-macos13.0 Sources/*.swift \
+# The Harper grammar checker (Apache-2.0) is linked in when native/harper/libharper-macos.a exists. Without it FreeFlow still
+# builds and uses a smaller built-in checker. scripts/build-harper.sh macos makes the library (needs Rust, a few minutes, once).
+HARPER=()
+if [ ! -f native/harper/libharper-macos.a ] && [ "${1:-}" = "release" ]; then
+  scripts/build-harper.sh macos || echo "Harper did not build; the release will use the built-in checker."
+fi
+if [ -f native/harper/libharper-macos.a ]; then
+  HARPER=(-DHARPER -import-objc-header rust/harper-ffi/harper.h native/harper/libharper-macos.a -Xlinker -lc++)
+  echo "Grammar checker: Harper"
+else
+  echo "Grammar checker: built-in (run scripts/build-harper.sh macos for Harper)"
+fi
+
+swiftc -O -swift-version 5 -target arm64-apple-macos13.0 Sources/*.swift ${HARPER[@]+"${HARPER[@]}"} \
   -o "$APP/Contents/MacOS/FreeFlow" \
   -framework AppKit -framework SwiftUI -framework AVFoundation -framework ApplicationServices -framework ServiceManagement -framework CoreAudio -framework ScreenCaptureKit
 cp Info.plist "$APP/Contents/"

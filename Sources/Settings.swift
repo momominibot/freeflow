@@ -315,6 +315,18 @@ final class Settings {
         set { d.set(newValue, forKey: "removeFillers") }
     }
 
+    /// Spelling the grammar checker expects: 0 American, 1 British, 2 Canadian, 3 Australian, 4 Indian. British suits Singapore.
+    var spellingVariety: Int {
+        get { min(4, max(0, d.object(forKey: "spellingVariety") as? Int ?? 1)) }
+        set { d.set(newValue, forKey: "spellingVariety") }
+    }
+
+    /// Off by default: fix the clear slips (a/an, a lowercase "i", a doubled word) in a dictation before it is typed.
+    var fixGrammarInDictation: Bool {
+        get { d.bool(forKey: "fixGrammarInDictation") }
+        set { d.set(newValue, forKey: "fixGrammarInDictation") }
+    }
+
     var sounds: Bool {
         get { d.object(forKey: "sounds") as? Bool ?? true }
         set { d.set(newValue, forKey: "sounds") }

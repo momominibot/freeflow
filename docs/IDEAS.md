@@ -20,6 +20,8 @@ Rules every idea has to pass: it runs on this Mac, it keeps plain files, it need
 | Double tap of the talk key to start hands-free (Wispr-style); a card with the words when a dictation did not reach a text box | `Sources/Input.swift`, `Sources/Unsent.swift` |
 | Hermes hand-over: `hermes kanban create` to Levi (or Eren), Test the connection button; web-content boxes are trusted by the "did not reach a text box" card | `Sources/Workday.swift`, `Sources/Unsent.swift` |
 | Learn from my own typing: a clear spelling fix is kept the first time (after 20 s), anything less clear when made twice; accuracy meter | `Sources/Typing.swift`, Learning page |
+| Polish: spelling, grammar, punctuation, clarity and style suggestions with one-click fixes, tone and reading time, seven rewrites, word swaps; also on selected text anywhere and (off by default) on what you dictate | `Sources/Polish.swift`, `Sources/PolishPage.swift`, Polish page |
+| FreeFlow for iPhone: talk, and Polish with the same checker and Apple Intelligence rewrites | `ios/` |
 | One command that checks every function | `scripts/smoke.sh` |
 
 ## Next, in the order I would do them
@@ -39,7 +41,7 @@ Rules every idea has to pass: it runs on this Mac, it keeps plain files, it need
 - Let the deeper notes feed the ideas list directly: repeated typed lines and repeated screen text found without an agent.
 - Ask about my week: a local model answers from the notes ("when did I last touch the EMIS theme?").
 
-**5. Writing (medium).** A Rewrite level above Medium for people who want the AI to rephrase and expand; tone by category (personal, work, email, other) with a very casual option; language per app; file and folder names from a project folder added to the vocabulary so code and paths are spelled right.
+**5. Writing (medium).** Polish is built (see above). Still to do: Polish suggestions live under the cursor as you type in any app (Grammarly's underlines; needs the Accessibility text API per app, so opt-in), a plagiarism-style "is this too close to a source" check (not planned), a Polish goal per document (audience, formality, intent) like Grammarly's goals, and a weekly writing report. Also: a Rewrite level above Medium for people who want the AI to rephrase and expand; tone by category (personal, work, email, other) with a very casual option; language per app; file and folder names from a project folder added to the vocabulary so code and paths are spelled right.
 
 **6. Meetings (medium).** Action items with owners; ask across all meetings; choose the notes folder (Obsidian); watch a folder and write down whatever audio lands in it; real speaker names.
 

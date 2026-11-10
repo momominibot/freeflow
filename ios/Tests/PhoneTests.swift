@@ -56,4 +56,95 @@ final class PhoneTests: XCTestCase {
         XCTAssertNil(SpeechLanguage.auto.code)
         XCTAssertEqual(SpeechLanguage.chinese.code, "zh")
     }
+    // MARK: - Polish (the grammar and wording checker, shared with the Mac app)
+
+    func testHarperIsLinkedIntoThePhoneApp() {
+        XCTAssertTrue(HarperEngine.isLinked, "the Rust library must be linked, or Polish falls back to the small built-in rules")
+    }
+
+    func testPolishFindsAndFixesCommonMistakes() {
+        let text = "i think we should of sent the the invoice yesterday, it was a unusual delay."
+        let issues = GrammarChecker.check(text)
+        XCTAssertGreaterThanOrEqual(issues.count, 3)
+        let fixed = GrammarChecker.autoFix(text).text
+        XCTAssertTrue(fixed.contains("should have"), fixed)
+        XCTAssertFalse(fixed.contains("the the"), fixed)
+        XCTAssertTrue(fixed.contains("an unusual"), fixed)
+        XCTAssertTrue(fixed.hasPrefix("I think"), fixed)
+    }
+
+    func testYourDictionaryWordsAreNotCalledMistakes() {
+        let text = "We sent it to Ranklore today."
+        XCTAssertFalse(GrammarChecker.check(text, words: ["Ranklore"]).contains { $0.kind == .spelling })
+    }
+
+    func testIgnoredWordsAreSkipped() {
+        let text = "The flurbish was here."
+        let first = GrammarChecker.check(text)
+        XCTAssertTrue(first.contains { $0.original.lowercased() == "flurbish" })
+        XCTAssertFalse(GrammarChecker.check(text, ignored: ["flurbish"]).contains { $0.original.lowercased() == "flurbish" })
+    }
+
+    func testAcceptingASuggestionChangesOnlyThatWord() {
+        let text = "I recieve the files today."
+        guard let issue = GrammarChecker.check(text).first(where: { $0.original == "recieve" }) else { return XCTFail("recieve not flagged") }
+        XCTAssertEqual(PolishText.apply(issue, fix: 0, to: text), "I receive the files today.")
+    }
+
+    func testBritishAndAmericanSpellingDiffer() {
+        defer { HarperEngine.dialect = 1 }
+        HarperEngine.dialect = 1
+        XCTAssertTrue(GrammarChecker.check("The colour is nice.").allSatisfy { $0.original != "colour" })
+        HarperEngine.dialect = 0
+        XCTAssertTrue(GrammarChecker.check("The colour is nice.").contains { $0.original == "colour" })
+    }
+
+    func testSlipsAreFixedWhileDictatingOnlyWhenAsked() {
+        let spoken = "this is a apple and i like it"
+        let off = PhonePipeline.finish(spoken, dictionary: "", removeFillers: true, quiet: false)
+        XCTAssertEqual(off, spoken, "off by default")
+        let on = PhonePipeline.finish(spoken, dictionary: "", removeFillers: true, quiet: false, fixSlips: true)
+        XCTAssertTrue(on.contains("an apple"), on)
+        XCTAssertTrue(on.contains("I like"), on)
+    }
+
+    func testSynonymsComeBack() {
+        XCTAssertFalse(GrammarChecker.synonyms(for: "good").isEmpty)
+        XCTAssertTrue(GrammarChecker.synonyms(for: "").isEmpty)
+    }
+
+    func testARewriteThatChangesANumberIsRefused() {
+        XCTAssertFalse(RewriteGuard.looksLikeRewrite(original: "Please pay 250 dollars by Friday, thank you very much.",
+                                                      rewritten: "Please pay 300 dollars by Friday, thank you very much.", mode: .clearer))
+        XCTAssertTrue(RewriteGuard.looksLikeRewrite(original: "Please pay 250 dollars by Friday, thank you very much.",
+                                                     rewritten: "Please pay 250 dollars by Friday. Thank you.", mode: .clearer))
+    }
+
+    func testRewritesExplainWhenTheyAreUnavailable() {
+        switch PhoneRewriter.availability {
+        case .ready: break
+        case .unavailable(let why): XCTAssertFalse(why.isEmpty)
+        }
+    }
+
+    @MainActor func testThePolishButtonHandsTheTextToTheOtherTab() {
+        let router = Router()
+        XCTAssertEqual(router.tab, .talk)
+        router.polish("send it tomorrow")
+        XCTAssertEqual(router.tab, .polish)
+        XCTAssertEqual(router.draft, "send it tomorrow")
+    }
+
+    @MainActor func testThePolishModelChecksAndFixesAll() async {
+        let model = PhonePolish()
+        model.text = PhonePolish.example
+        await model.check()
+        XCTAssertTrue(model.checked)
+        XCTAssertGreaterThan(model.fixableCount, 0)
+        XCTAssertNotNil(model.stats)
+        model.fixAll()
+        await model.check()
+        XCTAssertLessThan(model.fixableCount, 3)
+        XCTAssertFalse(model.text.contains("the the"))
+    }
 }

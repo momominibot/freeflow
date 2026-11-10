@@ -107,8 +107,22 @@ struct RecordButton: View {
     }
 }
 
+/// The two tabs: talk, and polish what you wrote.
+struct RootView: View {
+    @EnvironmentObject var router: Router
+
+    var body: some View {
+        TabView(selection: $router.tab) {
+            ContentView().tabItem { Label("Talk", systemImage: "mic.fill") }.tag(Router.Tab.talk)
+            PolishView().tabItem { Label("Polish", systemImage: "checkmark.seal") }.tag(Router.Tab.polish)
+        }
+        .tint(RT.primary)
+    }
+}
+
 struct ResultCard: View {
     @EnvironmentObject var d: Dictation
+    @EnvironmentObject var router: Router
     let entry: Entry
 
     var body: some View {
@@ -118,6 +132,7 @@ struct ResultCard: View {
                 HStack(spacing: 10) {
                     Button(d.copiedFlash ? "Copied" : "Copy") { d.copy(entry.text) }.buttonStyle(SoftButton(prominent: true))
                     ShareLink(item: entry.text) { Label("Share", systemImage: "square.and.arrow.up") }.buttonStyle(SoftButton())
+                    Button("Polish") { router.polish(entry.text) }.buttonStyle(SoftButton())
                     Spacer()
                 }
                 if d.autoCopy {
@@ -130,6 +145,7 @@ struct ResultCard: View {
 
 struct HistoryList: View {
     @EnvironmentObject var d: Dictation
+    @EnvironmentObject var router: Router
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -144,6 +160,7 @@ struct HistoryList: View {
                 .onTapGesture { d.copy(e.text) }
                 .contextMenu {
                     Button("Copy") { d.copy(e.text) }
+                    Button("Polish this") { router.polish(e.text) }
                     ShareLink(item: e.text)
                     Button("Delete", role: .destructive) { d.delete(e) }
                 }

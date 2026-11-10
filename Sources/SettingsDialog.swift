@@ -139,6 +139,8 @@ struct GeneralTab: View {
         let lang = model.bind({ s.language }, { s.language = $0 })
         let clean = model.bind({ s.cleanupLevel }, { s.cleanupLevel = $0 }, then: model.bridge.cleanupChanged)
         let fillers = model.bind({ s.removeFillers }, { s.removeFillers = $0 })
+        let variety = model.bind({ s.spellingVariety }, { s.spellingVariety = $0; HarperEngine.dialect = $0 })
+        let slips = model.bind({ s.fixGrammarInDictation }, { s.fixGrammarInDictation = $0 })
         let cmdOn = model.bind({ s.commandMode }, { s.commandMode = $0 }, then: model.bridge.commandModeChanged)
         let cmdKey = model.bind({ s.commandKey }, { s.commandKey = $0 }, then: model.bridge.hotkeysChanged)
         let look = model.bind({ s.appearance }, { s.appearance = $0 }, then: { AppearanceChoice.applySaved() })
@@ -186,6 +188,11 @@ struct GeneralTab: View {
                 ChipPicker(options: CleanupLevel.allCases.map { ($0, $0.chipTitle) }, selection: clean)
             }
             Toggle(isOn: fillers) { RowLabel(title: "Remove filler words", note: "Um, uh and friends.") }
+                .toggleStyle(RhythmeToggleStyle())
+            SettingRow(title: "Spelling", note: "Which spelling the Polish checker expects. British suits Singapore.") {
+                ChipPicker(options: [(1, "British"), (0, "American"), (3, "Australian")], selection: variety)
+            }
+            Toggle(isOn: slips) { RowLabel(title: "Fix clear slips in what I say", note: "A wrong a/an, a lowercase \"I\", a doubled word. Only slips with one clear answer; spelling is left alone.") }
                 .toggleStyle(RhythmeToggleStyle())
             SettingRow(title: "Tone by app", note: "Formal in Mail, casual in Slack, exact in code editors. Edit the list in a text file.") {
                 Button("Edit styles…") { model.bridge.editStyles() }.buttonStyle(GhostButton())
