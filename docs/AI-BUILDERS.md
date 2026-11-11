@@ -4,7 +4,7 @@ Most Purrscribe users talk to coding agents all day (Claude Code, Cursor, Codex,
 
 ## What it does now
 
-**Seven rewrites for builders** (Mac: Polish page and the menu bar "Rewrite selected text"; iPhone: Polish tab). Rough or spoken notes go in, text for an agent or a code host comes out.
+**Seven rewrites for builders** (Polish page and the menu bar "Rewrite selected text"). Rough or spoken notes go in, text for an agent or a code host comes out.
 
 | Rewrite | Gives you |
 | --- | --- |
@@ -23,7 +23,7 @@ The rules every one of them follows (this is the part the proven tools agree on)
 - **It writes up, it does not do.** A question in your notes stays a question in the prompt.
 - Plain text with simple labels, so it pastes cleanly into a terminal, Cursor or a chat box.
 
-**Say code the way it is written** (Mac and iPhone, fixed rules, works offline, no AI):
+**Say code the way it is written** (fixed rules, works offline, no AI):
 
 | You say | You get |
 | --- | --- |
@@ -61,7 +61,7 @@ Official guidance we followed for the prompt shape: Anthropic's Claude Code best
 
 - **Copied the ideas, not the words.** We took the structure and method (goal first, only what was said, a check to run, code kept exactly, caller never answered for) and wrote every prompt fresh. VoiceInk is GPL v3, so none of its code or prompt text was used.
 - **Made our own:** the guard. The others trust the model; Purrscribe checks the result and refuses a rewrite that lost a file name, flag or number.
-- **Made our own:** it runs on the iPhone with Apple's on-device model, and on the Mac with the local model. No cloud, no key.
+- **Made our own:** it runs on the Mac with the local model. No cloud, no key.
 
 ## Not built yet (and why)
 

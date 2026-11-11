@@ -24,4 +24,4 @@ These keep their own licences:
 
 - `assets/brand/apps/`: the brand pictures on the MCP page. Most are shapes from Simple Icons (CC0). The Hermes picture is the Hermes Agent icon from Nous Research (MIT). The names and marks in them belong to their owners. See [assets/brand/apps/NOTICE.txt](assets/brand/apps/NOTICE.txt).
 - `assets/fonts/`: Manrope and Newsreader, under the SIL Open Font License. See [assets/fonts/LICENSE.txt](assets/fonts/LICENSE.txt).
-- The libraries and models the app is built on, for example the Harper grammar checker, Whisper and WhisperKit. See [ThirdPartyNotices.txt](ThirdPartyNotices.txt).
+- The libraries and models the app is built on, for example the Harper grammar checker and Whisper. See [ThirdPartyNotices.txt](ThirdPartyNotices.txt).

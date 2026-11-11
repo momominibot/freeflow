@@ -1,9 +1,8 @@
 #!/bin/bash
-# Builds the Harper grammar checker (Apache-2.0, https://github.com/Automattic/harper) into static libraries
-# for the Mac app and the iPhone app: native/harper/libharper-{macos,ios,iossim}.a
+# Builds the Harper grammar checker (Apache-2.0, https://github.com/Automattic/harper) into a static library
+# for the Mac app: native/harper/libharper-macos.a
 #
-#   scripts/build-harper.sh           all three (the iPhone ones need `rustup target add` once; the script does it)
-#   scripts/build-harper.sh macos     only the Mac one (also: ios, iossim)
+#   scripts/build-harper.sh macos     builds it (build.sh calls it this way; with no argument it does the same)
 #
 # Purrscribe builds without it (a smaller built-in checker is used then); with it you get Harper's few hundred rules.
 set -euo pipefail
@@ -12,7 +11,7 @@ ROOT=$PWD
 TAG="v3.1.0"                                     # pinned: change on purpose, then rerun this and the tests
 CACHE="$ROOT/.harper-build"
 OUT="$ROOT/native/harper"
-WHICH="${1:-all}"
+WHICH="${1:-macos}"
 
 # Find a Rust toolchain: PATH first, then any rustup toolchain.
 if ! command -v cargo >/dev/null 2>&1; then
@@ -53,10 +52,8 @@ build() { # <rust target> <output name> <env...>
 }
 
 case "$WHICH" in
-  all|macos|ios|iossim) ;;
-  *) echo "Usage: scripts/build-harper.sh [all|macos|ios|iossim]"; exit 1 ;;
+  all|macos) ;;
+  *) echo "Usage: scripts/build-harper.sh [macos]"; exit 1 ;;
 esac
-if [ "$WHICH" = all ] || [ "$WHICH" = macos ];  then build aarch64-apple-darwin  macos  MACOSX_DEPLOYMENT_TARGET=13.0; fi
-if [ "$WHICH" = all ] || [ "$WHICH" = ios ];    then build aarch64-apple-ios     ios    IPHONEOS_DEPLOYMENT_TARGET=17.0; fi
-if [ "$WHICH" = all ] || [ "$WHICH" = iossim ]; then build aarch64-apple-ios-sim iossim IPHONEOS_DEPLOYMENT_TARGET=17.0; fi
+build aarch64-apple-darwin macos MACOSX_DEPLOYMENT_TARGET=13.0
 ls -lh "$OUT"

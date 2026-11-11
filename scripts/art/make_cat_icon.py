@@ -2,7 +2,6 @@
 """The cute-cat app icons: the Rhythme kitten on a soft lilac and blush tile (Dreamy), and the ginger cat on a butter and apricot
 tile (Sunset, the second colourway).
 Writes assets/brand/logo-icon-cat.png and assets/brand/AppIcon-cat.icns (the Mac icon, a rounded tile with room around it)
-and ios/App/Assets.xcassets/AppIcon.appiconset/icon.png (the iPhone icon, a full square: iOS rounds the corners itself),
 and assets/brand/logo-icon-sunset.png (the Mac Dock icon while the Sunset colourway is on).
 The cats are read from $RHYTHME_DREAM or ~/Documents/rhythme-wt/testflight-main/assets/room/dream.
 Run:  python3 scripts/art/make_cat_icon.py     (needs Pillow and numpy)"""
@@ -61,9 +60,6 @@ def mac_icon():
     out = Image.new("RGBA", (N, N), (0, 0, 0, 0)); out.alpha_composite(drop, (0, 14)); out.alpha_composite(tile)
     return out
 
-def ios_icon():
-    return place(gradient((214, 196, 243), (246, 201, 214)), kitten(0.76), dy=6).convert("RGB")
-
 def sunset_icon():
     """The ginger cat's head and bandana on a butter-to-apricot tile, cut off by the tile's bottom edge like it is peeking in."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -101,6 +97,5 @@ if __name__ == "__main__":
     mac = mac_icon()
     mac.save(os.path.join(ROOT, "assets/brand/logo-icon-cat.png"))
     write_icns(mac, os.path.join(ROOT, "assets/brand/AppIcon-cat.icns"))
-    ios_icon().save(os.path.join(ROOT, "ios/App/Assets.xcassets/AppIcon.appiconset/icon.png"))
     sunset_icon().save(os.path.join(ROOT, "assets/brand/logo-icon-sunset.png"))
-    print("wrote the Mac and iPhone cat icons and the Sunset Dock icon")
+    print("wrote the Mac cat icon and the Sunset Dock icon")

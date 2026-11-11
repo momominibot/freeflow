@@ -11,9 +11,11 @@ as a static library, unmodified, through a small wrapper in rust/harper-ffi). Th
 libraries below, under the entry for harper-core.
 
 ================================================================================
-WhisperKit (speech recognition on iPhone) - MIT License
+Whisper (the speech models) - MIT License
 ================================================================================
-Copyright (c) 2024 argmax, inc. https://github.com/argmaxinc/argmax-oss-swift
+Copyright (c) 2022 OpenAI. https://github.com/openai/whisper
+The Mac install script downloads a converted copy of the model (https://huggingface.co/ggerganov/whisper.cpp). The app runs it
+with whisper.cpp, which is installed separately with Homebrew and is not bundled.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files
 (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify,
@@ -26,23 +28,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
 LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-WhisperKit contains code derived from swift-transformers (https://github.com/huggingface/swift-transformers), Copyright 2022
-Hugging Face SAS, licensed under the Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0). The full text of
-that licence is in the Harper section below.
-
-================================================================================
-Whisper (the speech models) - MIT License
-================================================================================
-Copyright (c) 2022 OpenAI. https://github.com/openai/whisper
-The models are used through WhisperKit's converted copies (https://huggingface.co/argmaxinc/whisperkit-coreml), under the same
-MIT licence as WhisperKit above.
-
-================================================================================
-Apple Intelligence
-================================================================================
-Rewrites on supported iPhones use Apple's on-device language model through Apple's Foundation Models framework, which is part
-of iOS. It is not bundled with FreeFlow.
 
 ================================================================================
 Rust libraries inside Harper

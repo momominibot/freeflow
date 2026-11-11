@@ -2,7 +2,7 @@
 """Writes ThirdPartyNotices.txt: scripts/notices-header.txt plus the licence text of every Rust library linked into Harper.
 
 Needs the Harper checkout from scripts/build-harper.sh (.harper-build/harper) and a Rust toolchain.
-    python3 scripts/gen-notices.py          writes ThirdPartyNotices.txt and ios/App/Resources/ThirdPartyNotices.txt
+    python3 scripts/gen-notices.py          writes ThirdPartyNotices.txt
 """
 import hashlib, json, os, re, subprocess, sys
 
@@ -19,9 +19,9 @@ if tc:
 def run(*cmd):
     return subprocess.run(cmd, cwd=HARPER, env=env, capture_output=True, text=True, check=True).stdout
 
-meta = json.loads(run("cargo", "metadata", "--format-version", "1", "--filter-platform", "aarch64-apple-ios", "--offline"))
+meta = json.loads(run("cargo", "metadata", "--format-version", "1", "--filter-platform", "aarch64-apple-darwin", "--offline"))
 pkgs = {(p["name"], p["version"]): p for p in meta["packages"]}
-tree = run("cargo", "tree", "-p", "harper-ffi", "--target", "aarch64-apple-ios", "-e", "normal", "--prefix", "none", "--offline")
+tree = run("cargo", "tree", "-p", "harper-ffi", "--target", "aarch64-apple-darwin", "-e", "normal", "--prefix", "none", "--offline")
 linked = sorted({tuple(l.replace(" (*)", "").split()[:2]) for l in tree.splitlines() if l.strip()})
 
 LICENSE_NAME = re.compile(r"^(LICEN[CS]E|COPYING|UNLICENSE|NOTICE)", re.I)
@@ -82,8 +82,6 @@ if missing:
     out.extend("  " + m for m in missing)
     out.append("")
 text = "\n".join(out)
-for dest in (os.path.join(ROOT, "ThirdPartyNotices.txt"), os.path.join(ROOT, "ios", "App", "Resources", "ThirdPartyNotices.txt")):
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
-    open(dest, "w", encoding="utf-8").write(text)
+open(os.path.join(ROOT, "ThirdPartyNotices.txt"), "w", encoding="utf-8").write(text)
 print(f"{len(linked)} libraries, {len(texts)} distinct licence texts, {len(missing)} without a licence file, {len(text) // 1024} KB")
 for m in missing: print("  no licence file:", m)
