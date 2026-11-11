@@ -1,11 +1,12 @@
 #!/bin/bash
-# FreeFlow smoke test: every function, one command.
+# Purrscribe smoke test: every function, one command.
 #
 #   scripts/smoke.sh            build, install, then everything
 #   scripts/smoke.sh static     no app needed: build, units, tools, engine, AI, MCP, pictures of every page
 #   scripts/smoke.sh live       the installed app: window, dictation, notes, meetings, transforms, files
 #   SMOKE_NARROW=1 ...          also draws every page at the narrowest window (860)
 #   SMOKE_QWEN=1 ...            also tries the optional Qwen3-ASR engine
+#   SMOKE_NO_BUILD=1 ...        do not run build.sh (it wipes build/); use the app already built there. For when another build is going
 #
 # The live part drives the real app: it speaks through the speakers into the microphone (a natural local voice, Kokoro, see
 # scripts/tools/speak.py; the robotic macOS `say` voice only if Kokoro is missing), types into a scratch
@@ -16,9 +17,9 @@ set -u
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 MODE=${1:-all}
-BIN=$ROOT/build/FreeFlow.app/Contents/MacOS/FreeFlow
-APP=/Applications/FreeFlow.app
-APPBIN=$APP/Contents/MacOS/FreeFlow
+BIN=$ROOT/build/Purrscribe.app/Contents/MacOS/Purrscribe
+APP=/Applications/Purrscribe.app
+APPBIN=$APP/Contents/MacOS/Purrscribe
 SUP="$HOME/Library/Application Support/FreeFlow"
 LOG="$HOME/Library/Logs/FreeFlow/freeflow.log"
 DOM=com.momominibot.freeflow
@@ -40,8 +41,8 @@ wait_for(){ local n=$1; shift; local i=0; while [ $i -lt "$n" ]; do if "$@" >/de
 
 # ---------------------------------------------------------------- the voice used for every spoken test
 
-# The voices FreeFlow keeps: assets/voices/voices.json (the list and samples) and the model in its data folder.
-# speak.py finds the model by itself; KOKORO_DIR only overrides it. The Python needs kokoro_onnx: a FreeFlow one if it exists,
+# The voices Purrscribe keeps: assets/voices/voices.json (the list and samples) and the model in its data folder.
+# speak.py finds the model by itself; KOKORO_DIR only overrides it. The Python needs kokoro_onnx: a Purrscribe one if it exists,
 # otherwise the one from the older Lemo Opuscar project.
 VOICE_PY=${FF_VOICE_PY:-}
 if [ -z "$VOICE_PY" ]; then
@@ -79,10 +80,12 @@ play() { afplay "$WORK/voice/$1.wav" >/dev/null 2>&1; }       # blocks until the
 
 stage_build() {
   stage "Build"
-  if ./build.sh >"$WORK/build.log" 2>&1; then ok "build.sh builds, signs and runs its own checks"; else bad "build.sh (see $WORK/build.log)"; tail -5 "$WORK/build.log"; fi
-  check "the built app is signed" codesign --verify "$ROOT/build/FreeFlow.app"
+  if [ "${SMOKE_NO_BUILD:-}" = 1 ]; then   # never falls back to build.sh: if there is no app, the checks below fail and say so
+    if [ -x "$BIN" ]; then skp "build.sh not run (SMOKE_NO_BUILD=1), using the app already in build/"; else bad "SMOKE_NO_BUILD=1 but there is no built app in build/ (is another build running?)"; return; fi
+  elif ./build.sh >"$WORK/build.log" 2>&1; then ok "build.sh builds, signs and runs its own checks"; else bad "build.sh (see $WORK/build.log)"; tail -5 "$WORK/build.log"; fi
+  check "the built app is signed" codesign --verify "$ROOT/build/Purrscribe.app"
   check "Info.plist is valid" plutil -lint Info.plist
-  local res="$ROOT/build/FreeFlow.app/Contents/Resources"
+  local res="$ROOT/build/Purrscribe.app/Contents/Resources"
   check "fonts are bundled" test -f "$res/Fonts/Manrope-Medium.ttf" -a -f "$res/Fonts/Newsreader-SemiBold.ttf"
   check "logo and app icon are bundled" test -f "$res/Brand/logo-mark.png" -a -f "$res/AppIcon.icns"
   local want have
@@ -90,6 +93,26 @@ stage_build() {
   [ "$want" = "$have" ] && ok "all $want painted pictures are bundled" || bad "painted pictures bundled: $have of $want"
   want=$(ls assets/art/cats/*.webp | wc -l | tr -d ' '); have=$(ls "$res"/Brand/art/cats/*.webp 2>/dev/null | wc -l | tr -d ' ')
   [ "$want" = "$have" ] && ok "all $want cat pictures are bundled" || bad "cat pictures bundled: $have of $want"
+  want=$(ls assets/art/sunset/*.webp | wc -l | tr -d ' '); have=$(ls "$res"/Brand/art/sunset/*.webp 2>/dev/null | wc -l | tr -d ' ')
+  [ "$want" = "$have" ] && ok "all $want Sunset pictures are bundled" || bad "Sunset pictures bundled: $have of $want"
+  # The cats: six, each with three pictures (sitting, asleep, walking) in both colourways (Dreamy in assets/art/cats, Sunset in
+  # assets/art/sunset), and three toys (ball, fish biscuit, pile; the bowl picture is no longer used by the app).
+  local c pose way missing="" named
+  named=$(grep -E 'static let names = \[' Sources/CatRunner.swift | grep -o '"[a-z]*"' | tr -d '"' | tr '\n' ' ')
+  [ "$named" = "cream ginger black smoky snowy cocoa " ] && ok "the app names the same six cats the pictures are drawn for" || bad "cats named in Sources/CatRunner.swift: $named"
+  for c in cream ginger black smoky snowy cocoa; do
+    for pose in runner runner-sleep walk; do
+      for way in cats sunset; do [ -s "assets/art/$way/$pose-$c.webp" ] || missing="$missing $way/$pose-$c"; done
+    done
+  done
+  [ -z "$missing" ] && ok "6 cats x 3 pictures x 2 colourways: all 36 cat pictures exist" || bad "cat pictures missing:$missing"
+  for way in cats sunset; do
+    have=$(ls assets/art/$way/runner-*.webp assets/art/$way/walk-*.webp 2>/dev/null | wc -l | tr -d ' ')
+    [ "$have" = 18 ] && ok "$way: exactly 18 cat pictures (6 sitting, 6 asleep, 6 walking)" || bad "$way: $have cat pictures, expected 18"
+  done
+  missing=""
+  for pose in toy-ball toy-fish toy-poop; do [ -s "assets/art/cats/$pose.webp" ] || missing="$missing $pose"; done
+  [ -z "$missing" ] && ok "the 3 toy pictures exist (ball, fish biscuit, pile)" || bad "toy pictures missing:$missing"
   want=$(ls assets/brand/apps/*.png | wc -l | tr -d ' '); have=$(ls "$res"/Brand/apps/*.png 2>/dev/null | wc -l | tr -d ' ')
   [ "$want" = "$have" ] && ok "all $want app brand pictures are bundled" || bad "app brand pictures bundled: $have of $want"
   check "MCP server and Qwen engine scripts are bundled" test -x "$res/freeflow-mcp.py" -a -f "$res/qwen_server.py" -a -x "$res/install-qwen-engine.sh"
@@ -106,7 +129,8 @@ stage_units() {
   local pol; pol=$(grep -cE '^ok +polish:' "$WORK/unit.log")
   [ "$pol" -ge 40 ] && ok "$pol Polish checks pass (spelling, grammar, protected words, rewrites guard, synonyms)" || bad "Polish checks: only $pol ran"
   if [ -f native/harper/libharper-macos.a ]; then
-    grep -q "Grammar checker: Harper" "$WORK/build.log" && grep -qE '^ok +harper:' "$WORK/unit.log" && ok "Harper is linked and its checks pass" || bad "native/harper exists but Harper is not linked or its checks did not run"
+    if [ "${SMOKE_NO_BUILD:-}" = 1 ]; then grep -qE '^ok +harper:' "$WORK/unit.log" && ok "Harper checks pass (no build log, so the linking itself was not checked)" || bad "native/harper exists but its checks did not run"
+    else grep -q "Grammar checker: Harper" "$WORK/build.log" && grep -qE '^ok +harper:' "$WORK/unit.log" && ok "Harper is linked and its checks pass" || bad "native/harper exists but Harper is not linked or its checks did not run"; fi
   else
     skp "Harper library not built (scripts/build-harper.sh macos); the built-in checker was tested instead"
   fi
@@ -122,15 +146,24 @@ stage_scripts() {
   grep -q workday_summary "$WORK/mcp.log" && ok "the MCP server offers the workday summary" || bad "workday_summary is not in the MCP tool list"
   if [ -x "$HOME/.local/bin/hermes" ] || [ -x "$HOME/.local/bin/fleet-bridge" ]; then ok "a Hermes hand-over (hermes or fleet-bridge) is installed and executable"; else bad "neither hermes nor fleet-bridge is installed"; fi
   check "compare-engines.py runs --help" tmo 20 python3 scripts/compare-engines.py --help
+  # The paid plan's Stripe setup script. Its tests talk to a fake Stripe on this Mac and can never reach the real one.
+  check "the Stripe setup script passes its tests (a fake Stripe, nothing real is called)" tmo 120 "$PY" -I -m unittest discover -s cloud/stripe
+  # The free local AI: the app, the installer and the guide must name the same rewrite model, or a new user follows a guide that downloads the wrong one.
+  local app_m inst_m
+  app_m=$(sed -n 's/.*static let recommended = "\([^"]*\)".*/\1/p' Sources/LocalModel.swift | head -1)
+  inst_m=$(sed -n 's/^AI_MODEL="\([^"]*\)".*/\1/p' install.sh | head -1)
+  if [ -n "$app_m" ] && [ "$app_m" = "$inst_m" ] && grep -qF "ollama pull $app_m" docs/LOCAL-MODEL-GUIDE.md; then ok "the rewrite model is the same in the app, install.sh and the local model guide ($app_m)"
+  else bad "the rewrite model differs: app '$app_m', install.sh '$inst_m', or the guide has no 'ollama pull $app_m'"; fi
+  [ -s docs/LOCAL-MODEL-GUIDE.md ] && grep -q "LOCAL-MODEL-GUIDE" install.sh && grep -q "LOCAL-MODEL-GUIDE" README.md && ok "install.sh and the README point to the local model guide" || bad "the local model guide is missing, or install.sh or the README does not point to it"
 }
 
 stage_voices() {
-  stage "The natural voices FreeFlow keeps"
+  stage "The natural voices Purrscribe keeps"
   local json=assets/voices/voices.json
   if ! "$PY" -c "import json,sys; d=json.load(open(sys.argv[1])); assert d['default'] in [v['id'] for v in d['voices']]; assert all(v.get('alias') and v.get('feel') for v in d['voices'])" "$json" 2>"$WORK/voices.err"; then bad "voices.json is valid, its default is one of its voices"; cat "$WORK/voices.err"; return; fi
   ok "voices.json is valid: $("$PY" -c "import json,sys; print(len(json.load(open(sys.argv[1]))['voices']))" "$json") voices, default $("$PY" -c "import json,sys; print(json.load(open(sys.argv[1]))['default'])" "$json")"
   local dir; dir=$("$PY" -c "import json,os,sys; print(os.path.expanduser(json.load(open(sys.argv[1]))['model_dir']))" "$json")
-  if [ -s "$dir/kokoro-v1.0.onnx" ] && [ -s "$dir/voices-v1.0.bin" ] && [ "$(stat -f %z "$dir/kokoro-v1.0.onnx")" -gt 300000000 ]; then ok "the Kokoro model is stored in FreeFlow's data folder ($(du -sh "$dir" | cut -f1))"; else bad "the Kokoro model is missing from $dir"; fi
+  if [ -s "$dir/kokoro-v1.0.onnx" ] && [ -s "$dir/voices-v1.0.bin" ] && [ "$(stat -f %z "$dir/kokoro-v1.0.onnx")" -gt 300000000 ]; then ok "the Kokoro model is stored in Purrscribe's data folder ($(du -sh "$dir" | cut -f1))"; else bad "the Kokoro model is missing from $dir"; fi
   local missing=""
   for id in $("$PY" -c "import json,sys; print(' '.join(v['id'] for v in json.load(open(sys.argv[1]))['voices']))" "$json"); do
     f=assets/voices/samples/$id.m4a
@@ -180,13 +213,13 @@ stage_render() {
   if tmo 400 "$BIN" --render-ui "$WORK/ui" >"$WORK/render.log" 2>&1; then ok "--render-ui finishes"; else bad "--render-ui"; fi
   local light dark
   light=$(ls "$WORK/ui"/*.png 2>/dev/null | wc -l | tr -d ' '); dark=$(ls "$WORK/ui/dark"/*.png 2>/dev/null | wc -l | tr -d ' ')
-  [ "$light" -ge 24 ] && [ "$light" = "$dark" ] && ok "$light light and $dark dark pictures (11 pages, 7 settings tabs, 6 bar states)" || bad "pictures: $light light, $dark dark"
+  [ "$light" -ge 31 ] && [ "$light" = "$dark" ] && ok "$light light and $dark dark pictures (13 pages, 7 settings tabs, the Local AI page in 4 states, the Home banner, 6 bar states)" || bad "pictures: $light light, $dark dark"
   if "$PY" -c "import PIL" 2>/dev/null; then
     "$PY" - "$WORK/ui" <<'EOF' >"$WORK/pix.log" 2>&1
 import sys, glob, os
 from PIL import Image, ImageStat
 d = sys.argv[1]; bad = []
-for f in sorted(glob.glob(d + "/page-*.png") + glob.glob(d + "/settings-*.png")):
+for f in sorted(glob.glob(d + "/page-*.png") + glob.glob(d + "/settings-*.png") + glob.glob(d + "/localmodel-*.png") + glob.glob(d + "/home-*.png")):
     l = ImageStat.Stat(Image.open(f).convert("L")).mean[0]
     k = ImageStat.Stat(Image.open(os.path.join(d, "dark", os.path.basename(f))).convert("L")).mean[0]
     if not (l > 170): bad.append(f"{os.path.basename(f)} light is {l:.0f}")
@@ -206,6 +239,8 @@ EOF
 
 # ---------------------------------------------------------------- live
 
+# The Accessibility helper and winsof find the app by its display name (Info.plist CFBundleName), pgrep and pkill by the
+# executable name; both are "Purrscribe" now.
 AX=""; SAY_OK=1; TE_NAMES=""
 post()  { "$APPBIN" --debug-post "$1"; }
 loglen(){ wc -l < "$LOG" | tr -d ' '; }
@@ -234,7 +269,9 @@ on run argv
     activate
     set text of front document to item 1 of argv
   end tell
-  tell application "System Events" to keystroke "a" using command down
+  tell application "System Events"
+    if frontmost of process "TextEdit" then keystroke "a" using command down
+  end tell
 end run
 EOF
 }
@@ -254,16 +291,42 @@ end run
 EOF
 }
 
-# Keystrokes only go out while TextEdit is verified to be in front: never into whatever else happens to hold the focus.
+# Keystrokes only go out while TextEdit is verified to be in front: never into whatever else happens to hold the focus. te_front brings it forward and checks;
+# then the keys are sent by an osascript call that checks AGAIN in the same call, before every key (the check and the keys used to be two separate calls, so a
+# window that grabbed the front in between, such as an app someone was using on the same Mac, got the keystrokes).
 te_front() { local i=0; while [ $i -lt 24 ]; do osascript -e 'tell application "TextEdit" to activate' >/dev/null 2>&1; [ "$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null)" = TextEdit ] && return 0; sleep 0.25; i=$((i+1)); done; return 1; }
-tp() { te_front || return 1; osascript -e "tell application \"System Events\" to keystroke \"$1\"" >/dev/null 2>&1; }
-bk() { te_front || return 1; osascript -e 'tell application "System Events"' -e "repeat $1 times" -e 'key code 51' -e 'end repeat' -e 'end tell' >/dev/null 2>&1; }
-nl() { te_front || return 1; osascript -e 'tell application "System Events" to key code 36' >/dev/null 2>&1; }
+tp() { te_front || return 1; osascript - "$1" >/dev/null 2>&1 <<'EOF'
+on run argv
+  tell application "System Events"
+    if not (frontmost of process "TextEdit") then error "TextEdit is not in front"
+    keystroke (item 1 of argv)
+  end tell
+end run
+EOF
+}
+bk() { te_front || return 1; osascript - "$1" >/dev/null 2>&1 <<'EOF'
+on run argv
+  tell application "System Events"
+    repeat (item 1 of argv as integer) times
+      if not (frontmost of process "TextEdit") then error "TextEdit is not in front"
+      key code 51
+    end repeat
+  end tell
+end run
+EOF
+}
+nl() { te_front || return 1; osascript >/dev/null 2>&1 <<'EOF'
+tell application "System Events"
+  if not (frontmost of process "TextEdit") then error "TextEdit is not in front"
+  key code 36
+end tell
+EOF
+}
 
-relaunch_app() {   # relaunch_app [launch arguments for FreeFlow...]
-  pkill -x FreeFlow >/dev/null 2>&1; sleep 1; pkill -9 -x FreeFlow >/dev/null 2>&1; sleep 0.5
+relaunch_app() {   # relaunch_app [launch arguments for Purrscribe...]
+  pkill -x Purrscribe >/dev/null 2>&1; sleep 1; pkill -9 -x Purrscribe >/dev/null 2>&1; sleep 0.5
   if [ $# -gt 0 ]; then open "$APP" --args "$@"; else open "$APP"; fi
-  wait_for 40 pgrep -x FreeFlow
+  wait_for 40 pgrep -x Purrscribe
   # the speech engine is up when its port answers
   wait_for 90 sh -c 'curl -s -o /dev/null http://127.0.0.1:8178/'
   sleep 3
@@ -284,7 +347,7 @@ snapshot_data() {
 
 restore_data() {
   local f
-  pkill -x FreeFlow >/dev/null 2>&1; sleep 1; pkill -9 -x FreeFlow >/dev/null 2>&1; sleep 0.5
+  pkill -x Purrscribe >/dev/null 2>&1; sleep 1; pkill -9 -x Purrscribe >/dev/null 2>&1; sleep 0.5
   for f in dictionary.txt learned.txt snippets.txt styles.txt modes.json history.jsonl history.txt; do
     if [ -f "$WORK/data/$f" ]; then cp -p "$WORK/data/$f" "$SUP/$f"; elif [ -f "$WORK/data/$f.absent" ]; then rm -f "$SUP/$f"; fi
   done
@@ -308,12 +371,12 @@ live_ui() {
   mkdir -p "$WORK/tools"
   swiftc -O scripts/tools/winsof.swift -o "$WORK/winsof" -framework CoreGraphics >/dev/null 2>&1
   if swiftc -O scripts/tools/axclick.swift -o "$WORK/axclick" -framework AppKit -framework ApplicationServices >"$WORK/axbuild.log" 2>&1; then AX="$WORK/axclick"; else bad "could not build the Accessibility helper"; tail -3 "$WORK/axbuild.log"; return; fi
-  press()  { "$AX" FreeFlow press "$1" >/dev/null 2>&1; sleep "${2:-0.7}"; }
-  has()    { "$AX" FreeFlow list 2>/dev/null | grep -qF -- "$1"; }
+  press()  { "$AX" Purrscribe press "$1" >/dev/null 2>&1; sleep "${2:-0.7}"; }
+  has()    { "$AX" Purrscribe list 2>/dev/null | grep -qF -- "$1"; }
   see()    { if has "$2"; then ok "$1"; else bad "$1 (missing: $2)"; fi; }
   gone()   { if has "$2"; then bad "$1 (still there: $2)"; else ok "$1"; fi; }
   post "home:home"; sleep 2.5
-  "$AX" FreeFlow list >/dev/null 2>&1; [ $? -eq 2 ] && { bad "Accessibility is not trusted for the helper"; return; }
+  "$AX" Purrscribe list >/dev/null 2>&1; [ $? -eq 2 ] && { bad "Accessibility is not trusted for the helper"; return; }
   press Home; see "Home page" "total words"
   press Meetings;    see "Meetings page" "Take notes now"
   see "Meetings page shows the call settings summary" "Call settings"
@@ -327,6 +390,8 @@ live_ui() {
   press Learning;    see "Learning page" "Is it getting better?"
   see "Learning page offers learning from your own typing" "Learn from my own typing"
   press Help;        see "Help page" "Quick start"
+  see "Help page has the local AI card" "The local AI (free, on your Mac)"
+  press "Open the local AI page"; see "the Local AI page opens from Help" "What your Mac has"
   press Home
   press Search;      see "Dictation search opens" "AXTextField"
   press Search;      gone "Dictation search closes" "AXTextField"
@@ -344,6 +409,7 @@ live_ui() {
   press Calls;       see "Calls tab" "Meeting detection"
   press MCP;         see "MCP tab" "Copy command"
   press Account;     see "Account tab" "First name"
+  see "Account tab shows the ways to get Purrscribe (free, cloud, build it yourself)" "Ways to get Purrscribe"
   press Team;        see "Team tab" "Shared folder"
   press "Data and Privacy"; see "Data and Privacy tab" "Keep my recordings on this Mac"
   # with recordings switched on, how many, how long and where can be chosen (and the switch goes back off)
@@ -371,19 +437,19 @@ live_ui() {
 
   # every list takes a new entry and writes it to its file (the files are put back at the end)
   press Words; press "Add new word" 0.8
-  "$AX" FreeFlow set "Ranklore" "Smokeword" >/dev/null 2>&1; sleep 0.3; press "Add" 0.8
+  "$AX" Purrscribe set "Ranklore" "Smokeword" >/dev/null 2>&1; sleep 0.3; press "Add" 0.8
   grep -qi smokeword "$SUP/dictionary.txt" 2>/dev/null && ok "Dictionary adds a word to its file" || bad "Dictionary add"
   press Phrases; press "Add new snippet" 0.8
-  "$AX" FreeFlow set "When I say" "my test address" >/dev/null 2>&1; "$AX" FreeFlow set "Type this" "12 Smoke Street" >/dev/null 2>&1; sleep 0.3; press "Add snippet" 0.8
+  "$AX" Purrscribe set "When I say" "my test address" >/dev/null 2>&1; "$AX" Purrscribe set "Type this" "12 Smoke Street" >/dev/null 2>&1; sleep 0.3; press "Add snippet" 0.8
   grep -qi "my test address" "$SUP/snippets.txt" 2>/dev/null && ok "Snippets adds a snippet to its file" || bad "Snippets add"
   press Tone
-  "$AX" FreeFlow set "Name" "Smoke tone" >/dev/null 2>&1; "$AX" FreeFlow set "How should it write" "Be very brief." >/dev/null 2>&1; sleep 0.3; press "Add tone" 0.8
+  "$AX" Purrscribe set "Name" "Smoke tone" >/dev/null 2>&1; "$AX" Purrscribe set "How should it write" "Be very brief." >/dev/null 2>&1; sleep 0.3; press "Add tone" 0.8
   grep -qi "smoke tone" "$SUP/modes.json" 2>/dev/null && ok "Tone adds a tone to its file" || bad "Tone add"
   press Rewrites
-  "$AX" FreeFlow set "Name" "Smoke transform" >/dev/null 2>&1; "$AX" FreeFlow set "What should it do" "Make it rhyme." >/dev/null 2>&1; sleep 0.3; press "Add transform" 0.8
+  "$AX" Purrscribe set "Name" "Smoke transform" >/dev/null 2>&1; "$AX" Purrscribe set "What should it do" "Make it rhyme." >/dev/null 2>&1; sleep 0.3; press "Add transform" 0.8
   grep -qi "smoke transform" "$SUP/modes.json" 2>/dev/null && ok "Transforms adds a transform to its file" || bad "Transforms add"
   press Jots
-  "$AX" FreeFlow set "Write something" "smoke note body" >/dev/null 2>&1; sleep 0.3; press "Save note" 0.8
+  "$AX" Purrscribe set "Write something" "smoke note body" >/dev/null 2>&1; sleep 0.3; press "Save note" 0.8
   grep -rqi "smoke note body" "$SUP/scratchpad" 2>/dev/null && ok "Jots saves a note to a file" || bad "Jots save"
   press Home
 }
@@ -443,7 +509,7 @@ live_voice() {
 
   # the paste path (used when typing is not allowed)
   te_new; post paste
-  wait_for 15 te_has "Paste test from FreeFlow" && ok "pasting a result into the app in front works" || bad "paste test"
+  wait_for 15 te_has "Paste test from Purrscribe" && ok "pasting a result into the app in front works" || bad "paste test"
 
   # a saved transform on the selected text
   local long="I just wanted to quickly write to you today to let you know that, as far as I can tell, the meeting that we had planned for Thursday afternoon at three o'clock is probably going to have to be moved to some other day next week, because a few of the people who really need to be there are not able to come."
@@ -461,9 +527,9 @@ live_voice() {
 
   # every state of the bar draws without a crash
   local s; for s in idle listening handsfree working "message:Learned: Ranklor to Ranklore" "message:smoke"; do post "pill:$s"; sleep 0.4; done
-  pgrep -x FreeFlow >/dev/null && ok "the bar shows every state without crashing" || bad "the app died while showing the bar"
+  pgrep -x Purrscribe >/dev/null && ok "the bar shows every state without crashing" || bad "the app died while showing the bar"
 
-  # learning: fix a word in the text FreeFlow typed and it notices the pair (a dry run, nothing is saved)
+  # learning: fix a word in the text Purrscribe typed and it notices the pair (a dry run, nothing is saved)
   te_new
   osascript -e 'tell application "TextEdit" to set text of front document to "FFPROBE we love ranklor so much"' >/dev/null 2>&1
   "$BIN" --probe-learn "FFPROBE we love ranklor so much" --probe-activate com.apple.TextEdit >"$WORK/learn.log" 2>&1 &
@@ -540,7 +606,7 @@ PYEOF
   te_front; sleep 1.2; post detail:snap
   if wait_for 40 sh -c "tail -n +$((off+1)) '$LOG' | grep -qE 'screen: (read [0-9]+ characters|could not|nothing readable|unchanged|not reading|still busy|Screen Recording is not allowed)'"; then
     if logsince "$off" | grep -q "Screen Recording is not allowed"; then
-      skp "Screen Recording is not allowed for FreeFlow on this Mac, so the screen text could not be tried"
+      skp "Screen Recording is not allowed for Purrscribe on this Mac, so the screen text could not be tried"
     elif logsince "$off" | grep -qE "screen: read [0-9]+ characters"; then
       ok "the window's text is read ($(logsince "$off" | grep -E 'screen: read [0-9]+ characters' | tail -1 | sed 's/.*screen: //'))"
       local hits try=0
@@ -593,8 +659,8 @@ live_unsent() {
   if [ -z "${AX:-}" ] || [ ! -x "${AX:-}" ]; then
     swiftc -O scripts/tools/axclick.swift -o "$WORK/axclick" -framework AppKit -framework ApplicationServices >"$WORK/axbuild.log" 2>&1 && AX="$WORK/axclick" || { bad "could not build the Accessibility helper"; return; }
   fi
-  type press >/dev/null 2>&1 || press() { "$AX" FreeFlow press "$1" >/dev/null 2>&1; sleep "${2:-0.7}"; }
-  type has >/dev/null 2>&1 || has() { "$AX" FreeFlow list 2>/dev/null | grep -qF -- "$1"; }
+  type press >/dev/null 2>&1 || press() { "$AX" Purrscribe press "$1" >/dev/null 2>&1; sleep "${2:-0.7}"; }
+  type has >/dev/null 2>&1 || has() { "$AX" Purrscribe list 2>/dev/null | grep -qF -- "$1"; }
   [ "$SAY_OK" = 1 ] || { skp "speakers not usable, so the spoken part of the card test was skipped"; }
   local off
 
@@ -650,7 +716,7 @@ live_notes() {
   # the other side of a call: with Screen & System Audio allowed, the note is written from both the microphone and what the Mac plays
   if logsince "$off" | grep -q "both sides true"; then
     grep -q "You and the others" "$SUP/meetings/$f" 2>/dev/null && ok "the other side of the call is heard too (the note says: You and the others)" || bad "both sides were on, but the note does not say so"
-  else skp "Screen & System Audio Recording is not allowed for FreeFlow, so only your side of a call is written"; fi
+  else skp "Screen & System Audio Recording is not allowed for Purrscribe, so only your side of a call is written"; fi
   if wait_for 120 logsaw "$off" "summary: done"; then ok "the AI summary is added by itself"; else bad "no summary was written"; logsince "$off" | grep summary | tail -3; fi
   grep -qiE "summary|action|decision" "$SUP/meetings/$f" 2>/dev/null && ok "the note file has a summary section" || bad "no summary section in the note"
 
@@ -749,7 +815,7 @@ live_calls() {
   if wait_for 25 logsaw "$off" "call detected (Zoom), mode auto"; then ok "a Zoom call is noticed (two checks, about 6 s)"; else bad "the call was not noticed"; logsince "$off" | tail -3; fi
   # the offer card is on screen during the countdown
   local id="" i=0
-  while [ $i -lt 20 ] && [ -z "$id" ]; do id=$("$WORK/winsof" FreeFlow 2>/dev/null | awk '$4>330 && $4<460 && $5<400 {print $1; exit}'); [ -n "$id" ] || sleep 0.3; i=$((i+1)); done
+  while [ $i -lt 20 ] && [ -z "$id" ]; do id=$("$WORK/winsof" Purrscribe 2>/dev/null | awk '$4>330 && $4<460 && $5<400 {print $1; exit}'); [ -n "$id" ] || sleep 0.3; i=$((i+1)); done
   if [ -n "$id" ] && screencapture -x -o -l "$id" "$WORK/call-card.png" 2>/dev/null && [ "$(stat -f %z "$WORK/call-card.png" 2>/dev/null || echo 0)" -gt 4000 ]; then ok "the offer card is on screen (picture: $WORK/call-card.png)"; else bad "no offer card was found on screen"; fi
   if wait_for 25 logsaw "$off" "notes started for Zoom"; then ok "notes start by themselves after the countdown"; else bad "the notes did not start"; logsince "$off" | tail -3; fi
   play meeting
@@ -787,48 +853,116 @@ live_mic() {
 front_pid() { local pid=$1 i=0; while [ $i -lt 30 ]; do osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" >/dev/null 2>&1; [ "$(osascript -e 'tell application "System Events" to get unix id of first process whose frontmost is true' 2>/dev/null)" = "$pid" ] && return 0; sleep 0.5; i=$((i+1)); done; return 1; }
 front_name() { local n=$1 i=0; while [ $i -lt 30 ]; do osascript -e "tell application \"$n\" to activate" >/dev/null 2>&1; [ "$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null)" = "$n" ] && return 0; sleep 0.5; i=$((i+1)); done; return 1; }
 
+safari_focus_box() {   # one click inside the test page's text box. It fills the top of the page, so 280 points under the window's top edge is in it
+  local geo x y
+  geo=$(osascript -e 'tell application "System Events" to tell process "Safari" to get (position of front window) & (size of front window)' 2>/dev/null)
+  x=$(echo "$geo" | cut -d, -f1 | tr -d ' '); y=$(echo "$geo" | cut -d, -f2 | tr -d ' ')
+  case "$x$y" in ''|*[!0-9-]*) return 1 ;; esac
+  # the click lands on whatever is on top at that spot, so Safari is checked once more right before it (and no click is made if it is not in front)
+  [ "$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null)" = Safari ] || return 1
+  cliclick c:=$((x + 220)),=$((y + 280)) >/dev/null 2>&1; sleep 1
+}
+safari_close_test_page() {   # closes the test tab, then any window left with no tab (closing a window's last tab leaves an empty window behind)
+  osascript >/dev/null 2>&1 <<'EOF'
+tell application "Safari"
+  repeat with i from (count of windows) to 1 by -1
+    try
+      repeat with j from (count of tabs of window i) to 1 by -1
+        if name of tab j of window i is "ff-learn-test" then close tab j of window i
+      end repeat
+    end try
+    try
+      if (count of tabs of window i) is 0 then close window i
+    end try
+  end repeat
+end tell
+EOF
+}
+
+# type_in_front PID TEXT: select all, then type TEXT, as ONE osascript call that checks before the select-all and again before the text that the app with that
+# pid is still in front. Returns 0 when it typed. Returns 1 when it did not (nothing is ever typed into another app) and prints the name of the app that held the front.
+TYPE_IN_FRONT_SCRIPT='on run argv
+  set thePid to (item 1 of argv) as integer
+  tell application "System Events"
+    set f to first process whose frontmost is true
+    if (unix id of f) is not thePid then error "front:" & (name of f) & ":end"
+    keystroke "a" using command down
+    delay 0.3
+    set f to first process whose frontmost is true
+    if (unix id of f) is not thePid then error "front:" & (name of f) & ":end"
+    keystroke (item 2 of argv)
+  end tell
+end run'
+type_in_front() {
+  local out
+  if out=$(osascript -e "$TYPE_IN_FRONT_SCRIPT" "$1" "$2" 2>&1); then return 0; fi
+  out=$(printf '%s' "$out" | sed -n 's/.*front:\(.*\):end.*/\1/p' | head -1)
+  echo "${out:-unknown}"
+  return 1
+}
+front_app_now() { osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null; }
+
 learn_in() {   # learn_in LABEL chrome|safari  : the app notices a corrected word in a browser text box
-  local label="$1" kind="$2" pid="" attempt=0 done_=0
+  local label="$1" kind="$2" pid="" tpid="" attempt=0 rank best=0 intruder="" lp w who
   mkdir -p "$WORK/learn"
   printf '<!doctype html><title>ff-learn-test</title><body style="margin:0"><textarea autofocus rows="15" style="width:95%%;font-size:18px">FFPROBE we love ranklor so much</textarea></body>\n' > "$WORK/learn/learn.html"
-  while [ $attempt -lt 2 ] && [ $done_ = 0 ]; do
-    attempt=$((attempt+1))
+  # Up to three tries, stopping at the first that learns the word. The keys are only ever sent while the browser is verified in front (type_in_front), so when
+  # another app grabs the front window (someone is using the Mac meanwhile) it gets nothing and that try is void. The verdict is the best try:
+  # 4 learned, 3 typed but nothing learned, 2 the watcher could not read the box, 1 void (reported as skipped: it was not tested, and it says which app was in the way).
+  while [ $attempt -lt 3 ] && [ $best -lt 4 ]; do
+    attempt=$((attempt+1)); rank=1
     local front_ok=1
     if [ "$kind" = chrome ]; then
       open -na "Google Chrome" --args --user-data-dir="$WORK/learn/profile" --force-renderer-accessibility --no-first-run --no-default-browser-check "file://$WORK/learn/learn.html"
       wait_for 25 pgrep -f "user-data-dir=$WORK/learn/profile"; pid=$(pgrep -f "user-data-dir=$WORK/learn/profile" | head -1)
       [ -n "$pid" ] || { bad "$label: the test browser did not start"; return; }
-      sleep 6; front_pid "$pid" || front_ok=0
+      tpid=$pid; sleep 6; front_pid "$pid" || front_ok=0
     else
       open -a Safari "file://$WORK/learn/learn.html"; sleep 5
+      tpid=$(osascript -e 'tell application "System Events" to get unix id of process "Safari"' 2>/dev/null)
       front_name Safari || front_ok=0
+      # Safari keeps the cursor in its address bar when a page is opened from outside and ignores autofocus (Chrome does not), so click into the text box
+      [ $front_ok = 1 ] && safari_focus_box
     fi
     sleep 2
     if [ $front_ok = 0 ]; then
-      # the focus could not be held: nothing was typed anywhere; close the test page and try once more
-      echo "(attempt $attempt: $label could not be brought to the front)" >> "$WORK/learn/$kind.log"
+      # the focus could not be held: nothing was typed anywhere
+      intruder=$(front_app_now)
+      echo "(try $attempt: $label could not be brought to the front; ${intruder:-another app} held it)" > "$WORK/learn/$kind.log"
     else
       "$BIN" --probe-learn "FFPROBE we love ranklor so much" >"$WORK/learn/$kind.log" 2>&1 &
-      local lp=$! w=0
+      lp=$!; w=0
       while [ $w -lt 14 ] && ! grep -qE "watching|NOT WATCHING" "$WORK/learn/$kind.log" 2>/dev/null; do sleep 1; w=$((w+1)); done
       if grep -q "^watching" "$WORK/learn/$kind.log"; then
         if { [ "$kind" = chrome ] && front_pid "$pid"; } || { [ "$kind" = safari ] && front_name Safari; }; then
-          ok "$label: the watcher finds the typed text in the browser's text box"
-          osascript -e 'tell application "System Events" to keystroke "a" using command down' -e 'delay 0.3' -e 'tell application "System Events" to keystroke "FFPROBE we love Ranklore so much"' >/dev/null 2>&1
-          wait_for 50 sh -c "! kill -0 $lp 2>/dev/null"
-          grep -qi "ranklor -> Ranklore" "$WORK/learn/$kind.log" && ok "$label: the corrected word is learned (ranklor -> Ranklore)" || { bad "$label: nothing was learned"; tail -2 "$WORK/learn/$kind.log"; }
-          done_=1
+          if who=$(type_in_front "$tpid" "FFPROBE we love Ranklore so much"); then
+            wait_for 50 sh -c "! kill -0 $lp 2>/dev/null"
+            if grep -qi "ranklor -> Ranklore" "$WORK/learn/$kind.log"; then rank=4; else rank=3; fi
+          else
+            intruder="$who"; echo "(try $attempt: $who took the front window, so nothing was typed)" >> "$WORK/learn/$kind.log"
+          fi
+        else
+          intruder=$(front_app_now)
+          echo "(try $attempt: $label could not be brought back to the front; ${intruder:-another app} held it)" >> "$WORK/learn/$kind.log"
         fi
+      else
+        rank=2
       fi
       kill $lp 2>/dev/null
     fi
-    if [ $done_ = 0 ] && [ $attempt -ge 2 ]; then
-      bad "$label: the watcher could not read the browser's text box after two tries ($(tail -1 "$WORK/learn/$kind.log" | cut -c1-80))"
-    fi
+    if [ $rank -ge $best ]; then best=$rank; cp "$WORK/learn/$kind.log" "$WORK/learn/$kind.best.log" 2>/dev/null; fi
     if [ "$kind" = chrome ]; then pkill -f "user-data-dir=$WORK/learn/profile" >/dev/null 2>&1
-    else osascript -e 'tell application "Safari"' -e 'repeat with w in windows' -e 'repeat with t in (tabs of w)' -e 'if name of t is "ff-learn-test" then close t' -e 'end repeat' -e 'end repeat' -e 'end tell' >/dev/null 2>&1; fi
+    else safari_close_test_page; fi
     sleep 1
   done
+  case $best in
+    4) ok "$label: the watcher finds the typed text in the browser's text box"
+       ok "$label: the corrected word is learned (ranklor -> Ranklore)" ;;
+    3) ok "$label: the watcher finds the typed text in the browser's text box"
+       bad "$label: nothing was learned"; tail -2 "$WORK/learn/$kind.best.log" ;;
+    2) bad "$label: the watcher could not read the browser's text box after $attempt tries ($(tail -1 "$WORK/learn/$kind.best.log" | cut -c1-80))" ;;
+    *) skp "$label: not run: ${intruder:-another app} kept the front window in all $attempt tries, so nothing was typed (keys are never sent to another app). Run it again with the Mac left alone: ONLY=live_browsers scripts/smoke.sh live" ;;
+  esac
 }
 
 live_browsers() {
@@ -853,17 +987,18 @@ live_follow_mac() {
 stage_release() {
   stage "The package teammates get"
   if ./build.sh release >"$WORK/release.log" 2>&1; then ok "build.sh release makes the package"; else bad "build.sh release"; tail -4 "$WORK/release.log"; return; fi
-  local zip; zip=$(ls -t dist/FreeFlow-*.zip 2>/dev/null | head -1)
+  local zip; zip=$(ls -t dist/Purrscribe-*.zip 2>/dev/null | head -1)
   [ -n "$zip" ] && ok "$(basename "$zip") ($(du -h "$zip" | cut -f1))" || { bad "no zip was made"; return; }
   rm -rf "$WORK/rel"; mkdir -p "$WORK/rel"; unzip -q -o "$zip" -d "$WORK/rel"
   local d; d="$WORK/rel/$(ls "$WORK/rel" | head -1)"
-  [ -d "$d/FreeFlow.app" ] && [ -x "$d/install.sh" ] && [ -f "$d/README.md" ] && ok "the zip holds the app, install.sh and the README" || bad "the zip is missing a part"
-  codesign --verify --deep --strict "$d/FreeFlow.app" >/dev/null 2>&1 && ok "the unzipped app's signature is intact" || bad "the unzipped app's signature is broken"
-  local n; n=$("$d/FreeFlow.app/Contents/MacOS/FreeFlow" --test 2>&1 | grep -c '^ok')
+  [ -d "$d/Purrscribe.app" ] && [ -x "$d/install.sh" ] && [ -f "$d/README.md" ] && ok "the zip holds the app, install.sh and the README" || bad "the zip is missing a part"
+  [ -s "$d/LOCAL-MODEL-GUIDE.md" ] && grep -q "LOCAL-MODEL-GUIDE" "$d/install.sh" && ok "the zip holds the local model guide, and install.sh points to it" || bad "the local model guide is missing from the zip, or install.sh does not point to it"
+  codesign --verify --deep --strict "$d/Purrscribe.app" >/dev/null 2>&1 && ok "the unzipped app's signature is intact" || bad "the unzipped app's signature is broken"
+  local n; n=$("$d/Purrscribe.app/Contents/MacOS/Purrscribe" --test 2>&1 | grep -c '^ok')
   [ "$n" -ge 200 ] && ok "the unzipped copy passes its own $n unit checks" || bad "the unzipped copy's unit checks: $n ok"
   bash -n "$d/install.sh" && ok "install.sh is valid bash" || bad "install.sh has a syntax error"
   grep -q "xattr" "$d/install.sh" && ok "install.sh removes the download quarantine flag (the app is not notarised)" || bad "install.sh does not clear the quarantine flag"
-  if spctl --assess --type execute "$d/FreeFlow.app" >/dev/null 2>&1; then ok "macOS Gatekeeper accepts the app as is"; else skp "Gatekeeper rejects the app as downloaded (signed with a development certificate, not notarised): teammates run install.sh"; fi
+  if spctl --assess --type execute "$d/Purrscribe.app" >/dev/null 2>&1; then ok "macOS Gatekeeper accepts the app as is"; else skp "Gatekeeper rejects the app as downloaded (signed with a development certificate, not notarised): teammates run install.sh"; fi
 }
 
 live_all() {
@@ -875,18 +1010,20 @@ live_all() {
   defaults write $DOM debugTriggers -bool true
   defaults write $DOM workdayInterval -float 1
   relaunch_app
-  local pid0; pid0=$(pgrep -x FreeFlow | head -1)
-  [ -n "$pid0" ] && ok "FreeFlow is running (pid $pid0), speech engine answers" || { bad "FreeFlow did not start"; return; }
+  local pid0; pid0=$(pgrep -x Purrscribe | head -1)
+  [ -n "$pid0" ] && ok "Purrscribe is running (pid $pid0), speech engine answers" || { bad "Purrscribe did not start"; return; }
   post gesture:one          # the tests start from one-tap dictation whatever the saved preference is; the preference is restored at the end
   local start; start=$(date +%s)
-  # ONLY="live_typing live_notes" scripts/smoke.sh live   runs just those stages (the setup above always runs)
+  # ONLY="live_typing live_notes" scripts/smoke.sh live   runs just those stages (the setup above always runs).
+  # live_voice expects the snippet that live_ui adds ("my test address"), so run those two together: ONLY="live_ui live_voice"
+  # Nobody may use the Mac while this runs: the checks drive the front window, and the keys are only sent while the right app is in front.
   for st in live_ui live_workday live_voice live_unsent live_typing live_detail live_notes live_calls live_mic live_browsers; do
     if [ -z "${ONLY:-}" ] || case " $ONLY " in *" $st "*) true ;; *) false ;; esac; then $st; fi
   done
-  local pid1; pid1=$(pgrep -x FreeFlow | head -1)
+  local pid1; pid1=$(pgrep -x Purrscribe | head -1)
   [ "$pid0" = "$pid1" ] && ok "the app never restarted or crashed during the run" || bad "the app restarted (pid $pid0 to $pid1)"
   if [ -z "${ONLY:-}" ] || case " $ONLY " in *" live_ui "*) true ;; *) false ;; esac; then live_follow_mac; fi          # restarts the app on purpose, so it comes after the check above
-  if ls -t "$HOME/Library/Logs/DiagnosticReports"/FreeFlow* 2>/dev/null | head -1 | while read f; do [ "$(stat -f %m "$f")" -ge "$start" ] && exit 1; exit 0; done; then ok "no crash report was written"; else bad "a crash report was written during the run"; fi
+  if ls -t "$HOME/Library/Logs/DiagnosticReports"/Purrscribe* 2>/dev/null | head -1 | while read f; do [ "$(stat -f %m "$f")" -ge "$start" ] && exit 1; exit 0; done; then ok "no crash report was written"; else bad "a crash report was written during the run"; fi
 }
 
 # ---------------------------------------------------------------- run

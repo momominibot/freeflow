@@ -126,7 +126,7 @@ struct DictionaryPage: View {
             }
 
             TipBanner(key: "banner.dictionary", title: "Teach it your words.",
-                      text: "Add a name once, or correct a word after FreeFlow types it. Names, jargon and uncommon words then come out spelled your way.",
+                      text: "Add a name once, or correct a word after Purrscribe types it. Names, jargon and uncommon words then come out spelled your way.",
                       art: "words", model: model) {
                 HStack(spacing: 8) {
                     Button("Add new word") { adding = true }.buttonStyle(PrimaryButton(small: true))
@@ -169,7 +169,7 @@ struct DictionaryPage: View {
     private var emptyText: String {
         if !query.isEmpty { return "No word matches that." }
         switch tab {
-        case "Learned": return "Nothing learned yet. Fix a word in the text FreeFlow typed and it will show up here."
+        case "Learned": return "Nothing learned yet. Fix a word in the text Purrscribe typed and it will show up here."
         case "Shared with team": return model.settings.teamFolderURL == nil ? "No team folder yet. Pick one in Settings \u{203A} Team." : "Your team has not added any words."
         default: return "No words yet. Add a name Whisper keeps getting wrong."
         }
@@ -184,7 +184,7 @@ struct DictionaryPage: View {
             Button("From a file…") { importFile() }
             Button("From the clipboard") { importText(NSPasteboard.general.string(forType: .string) ?? "", ext: "txt") }
             Divider()
-            Button("Export…") { note = ListPageData.exportFile(Paths.dictionary, name: "FreeFlow dictionary.txt") }
+            Button("Export…") { note = ListPageData.exportFile(Paths.dictionary, name: "Purrscribe dictionary.txt") }
         } label: {
             Text("Import").font(Fonts.sans(13, .bold)).foregroundColor(RT.ink2)
                 .padding(.horizontal, 14).padding(.vertical, 8)
@@ -330,7 +330,7 @@ struct SnippetsPage: View {
             }
             Button("From the clipboard") { importText(NSPasteboard.general.string(forType: .string) ?? "", ext: "txt") }
             Divider()
-            Button("Export…") { note = ListPageData.exportFile(Paths.snippets, name: "FreeFlow snippets.txt") }
+            Button("Export…") { note = ListPageData.exportFile(Paths.snippets, name: "Purrscribe snippets.txt") }
         } label: {
             Text("Import").font(Fonts.sans(13, .bold)).foregroundColor(RT.ink2)
                 .padding(.horizontal, 14).padding(.vertical, 8)

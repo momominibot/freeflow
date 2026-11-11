@@ -4,7 +4,7 @@ Purpose: a test set in your own voice, with the right answer known, to compare t
 
 ## How to record
 
-1. FreeFlow menu: **Speech engine › Keep my recordings on this Mac** (tick it), and **Language › English + Chinese (mixed)**.
+1. Purrscribe menu: **Speech engine › Keep my recordings on this Mac** (tick it), and **Language › English + Chinese (mixed)**.
 2. Delete any older saved recordings first (Speech engine › Delete saved recordings) so only these 30 are in the folder.
 3. Go in order, one sentence per recording: tap Fn, read the sentence the way you would really say it, tap Fn. Paste doesn't matter, any text box works.
 4. Speak naturally, with your usual speed and accent. If you stumble, carry on and read it again as a normal recording at the end; don't skip numbers.

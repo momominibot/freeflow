@@ -2,7 +2,7 @@ import AppKit
 import ApplicationServices
 import SwiftUI
 
-// A dictation that did not reach a text box is never lost: it is already in the history, and when FreeFlow can tell that it did not
+// A dictation that did not reach a text box is never lost: it is already in the history, and when Purrscribe can tell that it did not
 // arrive, this card appears with the words so you can copy them. It is clickable without taking your keyboard focus, so the box you
 // were in stays the box you are in.
 
@@ -125,7 +125,7 @@ final class UnsentCard {
     init() {
         panel = PromptPanel(contentRect: NSRect(x: 0, y: 0, width: 440, height: 300),
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
-        panel.title = "FreeFlow: not typed"
+        panel.title = "Purrscribe: not typed"
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false

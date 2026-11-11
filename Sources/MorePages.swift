@@ -21,7 +21,7 @@ struct TransformsPage: View {
 
     var body: some View {
         PageScroll {
-            PageTitle(title: "Rewrites", subtitle: "Save a rewrite you use often. Select text in any app, pick it from the FreeFlow menu bar menu, and the selection is replaced.")
+            PageTitle(title: "Rewrites", subtitle: "Save a rewrite you use often. Select text in any app, pick it from the Purrscribe menu bar menu, and the selection is replaced.")
 
             VStack(alignment: .leading, spacing: 12) {
                 Text(editing == nil ? "New transform" : "Edit transform").font(Fonts.serif(20)).foregroundColor(RT.plum)
@@ -84,7 +84,7 @@ struct TransformsPage: View {
 
 // MARK: - Insights
 
-/// What the numbers say about how you use FreeFlow. Time saved is an estimate: typing at 40 words a minute against talking at 150.
+/// What the numbers say about how you use Purrscribe. Time saved is an estimate: typing at 40 words a minute against talking at 150.
 enum InsightMath {
     static func timeSavedMinutes(words: Int) -> Int {
         let typing = Double(words) / 40.0
@@ -115,7 +115,7 @@ struct InsightsPage: View {
         let appTotal = max(1, apps.reduce(0) { $0 + $1.1 })
         PageScroll {
             HStack(alignment: .center, spacing: 14) {
-                PageTitle(title: "Stats", subtitle: "How you use FreeFlow, worked out from the words on this Mac.")
+                PageTitle(title: "Stats", subtitle: "How you use Purrscribe, worked out from the words on this Mac.")
                 Spacer(minLength: 0)
                 if Art.image("words") != nil { ArtView(name: "words", size: 84) }
             }
@@ -217,14 +217,35 @@ struct HelpPage: View {
                 tip(KeyCap(text: s.talkKey.short), (s.doubleTapToStart ? "Double-tap, say anything, double-tap to finish. Or hold it while you talk." : "Tap, say anything, tap again. Or hold it while you talk."))
                 tip(KeyCap(text: s.commandKey.short), "Hold it with text selected and say what to change: \u{201C}make this shorter\u{201D}.")
                 tip(Image(systemName: "note.text").foregroundColor(RT.mauve), "Say \u{201C}note to self\u{201D} first and it goes to your Jots.")
-                tip(Image(systemName: "record.circle").foregroundColor(RT.mauve), "Start a call and FreeFlow offers to write it down. Notes are in Meetings.")
+                tip(Image(systemName: "record.circle").foregroundColor(RT.mauve), "Start a call and Purrscribe offers to write it down. Notes are in Meetings.")
+            }
+
+            SettingsCard(title: "The local AI (free, on your Mac)") {
+                let st = model.aiStatus
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: st == .checking ? "circle.dotted" : (st.isReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill"))
+                        .font(.system(size: 17)).foregroundColor(st == .checking ? RT.ink3 : (st.isReady ? RT.ok : RT.warn))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(st == .checking ? "Looking…" : (st.isReady ? "Ready" : "Not set up yet")).font(Fonts.sans(14.5, .heavy)).foregroundColor(RT.ink)
+                        Text(st.isReady
+                             ? "Tidy-ups, Edit by voice, Rewrites and meeting summaries run on this Mac. Nothing is uploaded."
+                             : "Dictation works without it. Tone by app, Edit by voice, Rewrites and meeting summaries need it. It is free and runs on your Mac.")
+                            .font(Fonts.sans(12.5, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                if st.isReady {
+                    Button("Open the local AI page") { model.page = .localModel }.buttonStyle(GhostButton())
+                } else {
+                    Button("Set up the local AI") { model.page = .localModel }.buttonStyle(PrimaryButton(small: true))
+                }
             }
 
             SettingsCard(title: "If something is off") {
                 trouble("Nothing is typed into the app",
-                        "Allow FreeFlow under Privacy & Security › Accessibility. Until then your words are copied, so ⌘V pastes them.")
+                        "Allow Purrscribe under Privacy & Security › Accessibility. Until then your words are copied, so ⌘V pastes them.")
                 trouble("It stops hearing me",
-                        "The Mac's audio service can get stuck. Quit FreeFlow, run the command below in Terminal, and open FreeFlow again.")
+                        "The Mac's audio service can get stuck. Quit Purrscribe, run the command below in Terminal, and open Purrscribe again.")
                 HStack(spacing: 10) {
                     Text("sudo killall coreaudiod").font(.system(size: 12.5, weight: .semibold, design: .monospaced)).foregroundColor(RT.plum)
                         .padding(.horizontal, 12).padding(.vertical, 8)
@@ -236,7 +257,7 @@ struct HelpPage: View {
                     }.buttonStyle(GhostButton())
                 }
                 trouble("The other people on a call are missing",
-                        "Allow FreeFlow under Privacy & Security › Screen & System Audio Recording, then start the notes again.")
+                        "Allow Purrscribe under Privacy & Security › Screen & System Audio Recording, then start the notes again.")
                 HStack(spacing: 10) {
                     Button("Allow screen audio…") { model.bridge.allowScreenAudio() }.buttonStyle(GhostButton())
                     Button("Allow microphone…") { model.bridge.allowMic() }.buttonStyle(GhostButton())
@@ -248,13 +269,14 @@ struct HelpPage: View {
                     Button("Open the log folder") { NSWorkspace.shared.open(Paths.logs) }.buttonStyle(GhostButton())
                     Button("Open the data folder") { NSWorkspace.shared.open(Paths.support) }.buttonStyle(GhostButton())
                 }
-                Text("Everything FreeFlow keeps is in that data folder: history, dictionary, snippets, notes. Nothing is sent online.")
+                Text("Everything Purrscribe keeps is in that data folder: history, dictionary, snippets, notes. Nothing is sent online.")
                     .font(Fonts.sans(12.5, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
             }
 
-            Text("FreeFlow \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
+            Text("Purrscribe \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
                 .font(Fonts.sans(12, .medium)).foregroundColor(RT.ink3)
         }
+        .onAppear { model.lookForLocalAI() }
     }
 
     private func tip<L: View>(_ lead: L, _ text: String) -> some View {

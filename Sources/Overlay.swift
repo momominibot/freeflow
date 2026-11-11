@@ -9,6 +9,8 @@ final class PillModel: ObservableObject {
     @Published var command = false
     @Published var levels = [CGFloat](repeating: 0, count: 18)
     @Published var level: CGFloat = 0
+    /// Bumped when the colourway changes so the bar is drawn again with the new colours.
+    @Published var look = 0
 }
 
 /// The Wispr-style bar at the bottom of the screen: a small plum pill with a face, live bars while you talk,
@@ -26,6 +28,7 @@ struct PillView: View {
         .frame(width: Self.size.width, height: Self.size.height, alignment: .bottom)
         .animation(.spring(response: 0.38, dampingFraction: 0.82), value: m.kind)
         .animation(.spring(response: 0.38, dampingFraction: 0.82), value: m.text)
+        .id(m.look)
     }
 
     /// How wide a message needs to be, up to 400 points, so a short message gives a short pill.
@@ -46,8 +49,7 @@ struct PillView: View {
     private var pill: some View {
         switch m.kind {
         case .idle:
-            Face(mood: .sleepy, color: RT.pillLilac.opacity(0.9))
-                .frame(width: 24)
+            KittyFace(mood: .sleepy).frame(width: 28, height: 24)
                 .padding(.horizontal, 14).padding(.vertical, 5)
                 .background(
                     Capsule().fill(LinearGradient(colors: [RT.night, RT.night2], startPoint: .leading, endPoint: .trailing).opacity(0.78))
@@ -56,7 +58,7 @@ struct PillView: View {
                 )
         case .listening:
             HStack(spacing: 11) {
-                Face(mood: .talk(m.level), color: RT.cream).frame(width: 36)
+                KittyFace(mood: .talk(m.level)).frame(width: 40, height: 34)
                 Bars(levels: m.levels).frame(width: 104, height: 22)
                 if !m.text.isEmpty {
                     Text(m.text).font(Fonts.sans(12.5, .semibold)).foregroundColor(RT.lilac2).lineLimit(1)
@@ -66,7 +68,7 @@ struct PillView: View {
             .background(shell)
         case .working:
             HStack(spacing: 11) {
-                Face(mood: .smile, color: RT.cream).frame(width: 36)
+                KittyFace(mood: .smile).frame(width: 40, height: 34)
                 Dots()
                 if !m.text.isEmpty {
                     Text(m.text).font(Fonts.sans(12.5, .semibold)).foregroundColor(RT.lilac2).lineLimit(1)
@@ -76,7 +78,7 @@ struct PillView: View {
             .background(shell)
         case .meeting:
             HStack(spacing: 10) {
-                Face(mood: .sleepy, color: RT.cream).frame(width: 34)
+                KittyFace(mood: .sleepy).frame(width: 38, height: 32)
                 PulseDot()
                 Text(m.text).font(Fonts.sans(12.5, .semibold)).foregroundColor(RT.lilac2).lineLimit(1)
             }
@@ -84,7 +86,7 @@ struct PillView: View {
             .background(shell)
         case .message:
             HStack(alignment: .center, spacing: 11) {
-                Face(mood: .smile, color: RT.cream).frame(width: 36)
+                KittyFace(mood: .smile).frame(width: 40, height: 34)
                 Text(m.text).font(Fonts.sans(13, .semibold)).foregroundColor(RT.cream)
                     .lineLimit(3).multilineTextAlignment(.leading)
                     .frame(width: Self.textWidth(m.text), alignment: .leading).fixedSize(horizontal: false, vertical: true)
@@ -92,6 +94,91 @@ struct PillView: View {
             .padding(.horizontal, 16).padding(.vertical, 11)
             .background(shell)
         }
+    }
+}
+
+/// The kitten on the floating bar (10 Nov 2026, the owner asked for it cuter than the flat white head): a cream face with soft round ears
+/// and pink insides, big eyes with a shine, a pink nose and a little "w" mouth that opens as you talk. Asleep, the eyes are closed curves.
+/// No cheek blush (the owner's rule for the cats). Drawn, not a picture, so the mouth can follow the microphone.
+struct KittyFace: View {
+    enum Mood { case smile, sleepy, talk(CGFloat) }
+    var mood: Mood = .smile
+
+    private static let fur = Color(red: 1.0, green: 0.97, blue: 0.93)
+    private static let earPink = Color(red: 1.0, green: 0.76, blue: 0.84)
+    private static let nose = Color(red: 0.98, green: 0.56, blue: 0.69)
+    private static let ink = Color(red: 0.23, green: 0.15, blue: 0.29)
+
+    var body: some View {
+        Canvas { ctx, size in
+            let w = size.width, h = size.height
+            func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: w * x, y: h * y) }
+            func ear(_ a: CGPoint, _ tip: CGPoint, _ b: CGPoint) -> Path {
+                Path { p in
+                    p.move(to: a)
+                    p.addQuadCurve(to: tip, control: CGPoint(x: (a.x + tip.x) / 2 - (b.x - a.x) * 0.10, y: (a.y + tip.y) / 2))
+                    p.addQuadCurve(to: b, control: CGPoint(x: (tip.x + b.x) / 2, y: (tip.y + b.y) / 2 - h * 0.02))
+                    p.closeSubpath()
+                }
+            }
+            // ears, then their pink insides
+            ctx.fill(ear(pt(0.08, 0.50), pt(0.15, 0.02), pt(0.46, 0.24)), with: .color(Self.fur))
+            ctx.fill(ear(pt(0.92, 0.50), pt(0.85, 0.02), pt(0.54, 0.24)), with: .color(Self.fur))
+            ctx.fill(ear(pt(0.17, 0.40), pt(0.19, 0.14), pt(0.38, 0.27)), with: .color(Self.earPink))
+            ctx.fill(ear(pt(0.83, 0.40), pt(0.81, 0.14), pt(0.62, 0.27)), with: .color(Self.earPink))
+            // the round head, wider than tall
+            ctx.fill(Path(ellipseIn: CGRect(x: w * 0.02, y: h * 0.18, width: w * 0.96, height: h * 0.80)), with: .color(Self.fur))
+
+            let eyeY: CGFloat = 0.56, eyeX: CGFloat = 0.30, r = min(w, h) * 0.105
+            switch mood {
+            case .sleepy:
+                for x in [eyeX, 1 - eyeX] {
+                    var p = Path()
+                    p.move(to: CGPoint(x: w * x - r * 1.1, y: h * eyeY))
+                    p.addQuadCurve(to: CGPoint(x: w * x + r * 1.1, y: h * eyeY), control: CGPoint(x: w * x, y: h * eyeY + r * 1.4))
+                    ctx.stroke(p, with: .color(Self.ink), style: StrokeStyle(lineWidth: max(1.2, r * 0.45), lineCap: .round))
+                }
+            default:
+                for x in [eyeX, 1 - eyeX] {
+                    let c = CGPoint(x: w * x, y: h * eyeY)
+                    ctx.fill(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r * 1.1, width: r * 2, height: r * 2.2)), with: .color(Self.ink))
+                    let s = r * 0.42                                                    // the shine
+                    ctx.fill(Path(ellipseIn: CGRect(x: c.x - r * 0.55, y: c.y - r * 0.85, width: s * 2, height: s * 2)), with: .color(.white))
+                }
+            }
+
+            // nose
+            let n = pt(0.5, 0.67), nw = w * 0.055
+            ctx.fill(Path { p in
+                p.move(to: CGPoint(x: n.x - nw, y: n.y - nw * 0.55))
+                p.addQuadCurve(to: CGPoint(x: n.x + nw, y: n.y - nw * 0.55), control: CGPoint(x: n.x, y: n.y - nw * 1.0))
+                p.addQuadCurve(to: CGPoint(x: n.x, y: n.y + nw * 0.65), control: CGPoint(x: n.x + nw * 0.7, y: n.y + nw * 0.1))
+                p.addQuadCurve(to: CGPoint(x: n.x - nw, y: n.y - nw * 0.55), control: CGPoint(x: n.x - nw * 0.7, y: n.y + nw * 0.1))
+            }, with: .color(Self.nose))
+
+            // the "w" mouth; talking opens a small pink mouth under it
+            let line = max(1.1, min(w, h) * 0.05)
+            let mw = w * 0.085, my = n.y + nw * 0.65
+            var mouth = Path()
+            mouth.move(to: CGPoint(x: n.x - mw * 2, y: my + h * 0.015))
+            mouth.addQuadCurve(to: CGPoint(x: n.x, y: my), control: CGPoint(x: n.x - mw, y: my + h * 0.10))
+            mouth.addQuadCurve(to: CGPoint(x: n.x + mw * 2, y: my + h * 0.015), control: CGPoint(x: n.x + mw, y: my + h * 0.10))
+            if case .talk(let level) = mood, level > 0.04 {
+                let open = min(1, level) * h * 0.16 + h * 0.03
+                ctx.fill(Path(ellipseIn: CGRect(x: n.x - mw * 0.9, y: my + h * 0.03, width: mw * 1.8, height: open)), with: .color(Self.nose))
+            }
+            ctx.stroke(mouth, with: .color(Self.ink), style: StrokeStyle(lineWidth: line, lineCap: .round, lineJoin: .round))
+
+            // a whisker each side, faint
+            for side in [-1.0, 1.0] as [CGFloat] {
+                var p = Path()
+                p.move(to: CGPoint(x: n.x + side * w * 0.20, y: n.y + h * 0.02))
+                p.addLine(to: CGPoint(x: n.x + side * w * 0.40, y: n.y - h * 0.02))
+                ctx.stroke(p, with: .color(Self.ink.opacity(0.28)), style: StrokeStyle(lineWidth: max(0.8, line * 0.7), lineCap: .round))
+            }
+        }
+        .shadow(color: Color.black.opacity(0.18), radius: 2, y: 1)
+        .accessibilityHidden(true)
     }
 }
 
@@ -175,6 +262,7 @@ final class Overlay {
         let host = NSHostingView(rootView: PillView(m: model))
         host.frame = NSRect(origin: .zero, size: size)
         panel.contentView = host
+        NotificationCenter.default.addObserver(forName: .freeflowLookChanged, object: nil, queue: .main) { [weak self] _ in self?.model.look += 1 }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil,
                                                queue: .main) { [weak self] _ in self?.place() }
     }

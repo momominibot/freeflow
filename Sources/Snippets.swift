@@ -18,12 +18,12 @@ struct Snippet {
     }
 
     static let template = """
-    # FreeFlow snippets
+    # Purrscribe snippets
     # Say the cue, get the expansion.  cue => expansion
     # Use \\n for a new line inside the expansion. Lines starting with # are ignored.
     # Cues are matched on whole words, ignoring case and punctuation.
 
-    my email address => hello@ranklore.ai
+    my email address => you@example.com
     my calendar link => Feel free to book a time here: https://cal.com/your-link
 
     """
@@ -106,7 +106,7 @@ struct Personalization {
     }
 
     static let stylesTemplate = """
-    # FreeFlow styles: the tone the AI uses, by app.   bundle.id => formal | casual | neutral | code | plain
+    # Purrscribe styles: the tone the AI uses, by app.   bundle.id => formal | casual | neutral | code | plain
     # "plain" means no AI rewrite in that app. Find an app's bundle id with:  osascript -e 'id of app "Slack"'
     # Built-in defaults already cover Mail, Outlook, Slack, WhatsApp, Messages, Telegram, VS Code, Cursor, Terminal and more.
 

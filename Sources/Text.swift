@@ -36,14 +36,14 @@ struct Vocabulary {
         }
     }
 
-    /// Adds what FreeFlow learned from your corrections: active swaps, and the words you meant as hotwords.
+    /// Adds what Purrscribe learned from your corrections: active swaps, and the words you meant as hotwords.
     mutating func addLearned(_ learned: LearnedFile, isCommon: (String) -> Bool) {
         for fix in learned.activeFixes(isCommon: isCommon) { addReplacement(fix.wrong, fix.right) }
         learnedTerms = learned.topTerms(40)
     }
 
     static let template = """
-    # FreeFlow dictionary
+    # Purrscribe dictionary
     # One word or name per line, so Whisper spells it your way.
     # To always swap a spelling, write:  wrong => right
     # Changes apply to the next thing you dictate.

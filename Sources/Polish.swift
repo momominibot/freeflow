@@ -1,7 +1,7 @@
 import Foundation
 import NaturalLanguage
 
-// Polish: the Grammarly-style half of FreeFlow. Shared by the Mac app and the iPhone app (like Text.swift), Foundation only.
+// Polish: the Grammarly-style half of Purrscribe. Shared by the Mac app and the iPhone app (like Text.swift), Foundation only.
 //
 //  * GrammarChecker   finds spelling, grammar, punctuation, clarity and word-choice problems and offers fixes.
 //                     The engine is Harper (Apache-2.0, https://github.com/Automattic/harper) when it is linked in

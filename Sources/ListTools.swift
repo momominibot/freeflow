@@ -1,7 +1,7 @@
 import Foundation
 
 /// Reading a list of words or snippets from a file someone else made: plain text, CSV or JSON.
-/// Every format ends up as the lines FreeFlow already understands: `word` or `wrong => right`.
+/// Every format ends up as the lines Purrscribe already understands: `word` or `wrong => right`.
 enum ListImport {
     /// Dictionary lines from the contents of a file. `ext` is the file extension, lower case.
     static func dictionaryLines(from text: String, ext: String) -> [String] {
@@ -119,7 +119,7 @@ enum HistoryExport {
     static func markdown(_ entries: [HistoryEntry], now: Date = Date()) -> String {
         let day = DateFormatter(); day.dateFormat = "EEEE d MMMM yyyy"
         let time = DateFormatter(); time.dateFormat = "h:mm a"
-        var out = "# FreeFlow dictations\n"
+        var out = "# Purrscribe dictations\n"
         var last = ""
         for e in entries.sorted(by: { $0.date < $1.date }) {
             let d = day.string(from: e.date)

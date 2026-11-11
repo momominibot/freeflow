@@ -1,10 +1,11 @@
 import AppKit
 import AVFoundation
 import ApplicationServices
+import SwiftUI
 
 let args = CommandLine.arguments
 
-// FreeFlow --selftest file.wav [language]: transcribe a file on a spare port and print the result.
+// Purrscribe --selftest file.wav [language]: transcribe a file on a spare port and print the result.
 if let i = args.firstIndex(of: "--selftest"), i + 1 < args.count {
     let server = WhisperServer(port: 8179)
     // Optional 3rd argument picks the engine: whisper (default) or qwen.
@@ -34,7 +35,7 @@ if let i = args.firstIndex(of: "--selftest"), i + 1 < args.count {
     exit(0)
 }
 
-// FreeFlow --test-ai "some dictated text" [formal|casual|neutral|code]: run the AI clean-up once and time it.
+// Purrscribe --test-ai "some dictated text" [formal|casual|neutral|code]: run the AI clean-up once and time it.
 if let i = args.firstIndex(of: "--test-ai"), i + 1 < args.count {
     let style = i + 2 < args.count ? (Style(rawValue: args[i + 2]) ?? .neutral) : .neutral
     let ai = Rewriter.shared
@@ -50,7 +51,7 @@ if let i = args.firstIndex(of: "--test-ai"), i + 1 < args.count {
     exit(0)
 }
 
-// FreeFlow --test: unit checks for the text pipeline. Exit code 1 on any failure.
+// Purrscribe --test: unit checks for the text pipeline. Exit code 1 on any failure.
 if args.contains("--test") {
     var fails = 0
     func check(_ name: String, _ got: String, _ want: String) {
@@ -69,10 +70,10 @@ if args.contains("--test") {
     check("raw level keeps fillers", TextCleaner.raw("um so yeah", quiet: false), "um so yeah")
 
     var snippets: [Snippet] = []
-    Snippet.parse("my email address => hello@ranklore.ai\nsign off => Best,\\nJamie\nmy email address => duplicate ignored\n", into: &snippets)
+    Snippet.parse("my email address => hello@example.com\nsign off => Best,\\nJamie\nmy email address => duplicate ignored\n", into: &snippets)
     check("snippet count, duplicate dropped", snippets.count == 2)
-    check("whole dictation is a cue", Snippet.apply(snippets, to: "My email address."), "hello@ranklore.ai")
-    check("cue inside a sentence", Snippet.apply(snippets, to: "You can reach me at my email address, thanks."), "You can reach me at hello@ranklore.ai, thanks.")
+    check("whole dictation is a cue", Snippet.apply(snippets, to: "My email address."), "hello@example.com")
+    check("cue inside a sentence", Snippet.apply(snippets, to: "You can reach me at my email address, thanks."), "You can reach me at hello@example.com, thanks.")
     check("multi-line expansion", Snippet.apply(snippets, to: "sign off"), "Best,\nJamie")
     check("no partial-word trigger", Snippet.apply(snippets, to: "Please sign offline forms."), "Please sign offline forms.")
 
@@ -137,7 +138,7 @@ if args.contains("--test") {
     let meta = (try? JSONSerialization.jsonObject(with: Data(contentsOf: tdir.appendingPathComponent(metaFile)))) as? [String: Any]
     check("takes: sidecar holds engine and what was heard", (meta?["engine"] as? String) == "qwen" && (meta?["heard"] as? String) == "same second")
     try? FileManager.default.removeItem(at: tdir)
-    // choices: a custom folder holding other files, an age limit, and delete-all that never touches what FreeFlow did not write
+    // choices: a custom folder holding other files, an age limit, and delete-all that never touches what Purrscribe did not write
     let cdir = FileManager.default.temporaryDirectory.appendingPathComponent("ff-takes-custom-\(UUID().uuidString)")
     try? FileManager.default.createDirectory(at: cdir, withIntermediateDirectories: true)
     try? Data([9]).write(to: cdir.appendingPathComponent("my-own-memo.wav"))
@@ -152,8 +153,8 @@ if args.contains("--test") {
     check("takes: a folder you chose keeps your own files, even past the count", ownLeft == ["my-own-memo.wav", "notes.json"])
     let removed = TakeStore.deleteAll(in: cdir)
     let afterDelete = ((try? FileManager.default.contentsOfDirectory(atPath: cdir.path)) ?? []).sorted()
-    check("takes: delete removes FreeFlow's recordings only and leaves the folder and your files", removed == 1 && afterDelete == ["my-own-memo.wav", "notes.json"])
-    check("takes: only FreeFlow's own file names count", TakeStore.isTakeFile("20261109-185331-01-whisper.wav") && TakeStore.isTakeFile("20261109-185331-01-qwen.json")
+    check("takes: delete removes Purrscribe's recordings only and leaves the folder and your files", removed == 1 && afterDelete == ["my-own-memo.wav", "notes.json"])
+    check("takes: only Purrscribe's own file names count", TakeStore.isTakeFile("20261109-185331-01-whisper.wav") && TakeStore.isTakeFile("20261109-185331-01-qwen.json")
           && !TakeStore.isTakeFile("meeting.wav") && !TakeStore.isTakeFile("20261109-185331-01-qwen.mp3") && !TakeStore.isTakeFile("../20261109-185331-01-q.wav"))
     try? FileManager.default.removeItem(at: cdir)
     try? FileManager.default.removeItem(at: fake)
@@ -367,7 +368,7 @@ if args.contains("--test") {
     check("import: duplicates are skipped without case", ListImport.fresh(["EMIS", "emis", "Ovaire", "ovaire"], existing: ["Emis"]) == ["Ovaire"])
     let exportEntries = [HistoryEntry(id: 1, date: Date(timeIntervalSince1970: 1_700_000_000), app: "a", mode: "light", text: "Hello there.", raw: "hello there"),
                          HistoryEntry(id: 2, date: Date(timeIntervalSince1970: 1_700_000_100), app: "a", mode: "light", text: "Second one.")]
-    check("export: markdown has the heading and both lines", HistoryExport.markdown(exportEntries).contains("# FreeFlow dictations") && HistoryExport.markdown(exportEntries).contains("Second one."))
+    check("export: markdown has the heading and both lines", HistoryExport.markdown(exportEntries).contains("# Purrscribe dictations") && HistoryExport.markdown(exportEntries).contains("Second one."))
     check("export: json keeps the original wording", HistoryExport.json(exportEntries).contains("\"original\" : \"hello there\""))
     check("export: plain text has one line per dictation", HistoryExport.plain(exportEntries).components(separatedBy: "\n").filter { !$0.isEmpty }.count == 2)
     let timed = (0..<3).map { HistoryEntry(id: $0, date: Date(), app: "a", mode: "light", text: "one two three four five six", raw: "", secs: 3) }
@@ -433,7 +434,7 @@ if args.contains("--test") {
                      seg(d, 9, 2, secs: 300, "com.tinyspeck.slackmacgap", "Slack"),
                      seg(d, 9, 10, secs: 300, "com.apple.mail", "Mail")]
             if d < 3 { for k in 0..<4 { week += [seg(d, 11, k * 2, secs: 30, "com.google.Chrome", "Google Chrome", "Shop", s: 0), seg(d, 11, k * 2, secs: 30, "com.apple.Numbers", "Numbers", "Sheet", s: 31)] } }
-            week.append(seg(d, 13, 0, secs: 900, "com.momominibot.freeflow", "FreeFlow"))
+            week.append(seg(d, 13, 0, secs: 900, "com.momominibot.freeflow", "Purrscribe"))
             week.append(seg(d, 14, 0, secs: 600, "com.apple.mail", "Mail", idle: true))
         }
         let habits = WorkdayAnalysis.habits(week, cal: utc)
@@ -441,13 +442,13 @@ if args.contains("--test") {
         check("habits: an app opened first thing on 5 days is found", chrome?.days == 5 && chrome?.ofDays == 5)
         check("habits: the usual time is the middle of the days", chrome.map { abs($0.minuteOfDay - (8 * 60 + 51)) <= 2 } ?? false)
         check("habits: a weekday-only routine is marked weekdays only", chrome?.weekdaysOnly == true)
-        check("habits: FreeFlow itself and idle time are not counted", !habits.contains { $0.bundle == "com.momominibot.freeflow" } && habits.filter { $0.bundle == "com.apple.mail" }.first?.minuteOfDay == 9 * 60 + 10)
+        check("habits: Purrscribe itself and idle time are not counted", !habits.contains { $0.bundle == "com.momominibot.freeflow" } && habits.filter { $0.bundle == "com.apple.mail" }.first?.minuteOfDay == 9 * 60 + 10)
         check("habits: fewer than three days of notes gives nothing", WorkdayAnalysis.habits(Array(week.prefix(6)), cal: utc).isEmpty)
         let loops = WorkdayAnalysis.loops(week, cal: utc)
         check("loops: going back and forth between two apps is found", loops.first.map { $0.times >= 6 && $0.days == 3 && Set($0.names) == ["Google Chrome", "Numbers"] } ?? false)
         check("loops: a few switches are not a loop", WorkdayAnalysis.loops(Array(week.prefix(12)), cal: utc).isEmpty)
         let today = WorkdayAnalysis.today(week, now: at(1, 12, 0), cal: utc)
-        check("today: minutes by app for one day, busiest first, without FreeFlow or idle time", today.first?.bundle == "com.google.Chrome" && today.first?.minutes == 12 && !today.contains { $0.bundle == "com.momominibot.freeflow" } && !today.contains { $0.bundle == "com.apple.mail" && $0.minutes > 5 })
+        check("today: minutes by app for one day, busiest first, without Purrscribe or idle time", today.first?.bundle == "com.google.Chrome" && today.first?.minutes == 12 && !today.contains { $0.bundle == "com.momominibot.freeflow" } && !today.contains { $0.bundle == "com.apple.mail" && $0.minutes > 5 })
 
         // dictated again and again
         let said = "Please install all the skills required for this and use the AI visibility playbook until the project is complete"
@@ -543,7 +544,7 @@ if args.contains("--test") {
         check("typing: added words are not a fix", TypingRules.pairs(previous: "we love", current: "we love Ranklore a lot", isCommon: common).isEmpty)
         check("typing: a rewrite is not a fix", TypingRules.pairs(previous: "we love Ranklore so much", current: "completely different words arrive now today", isCommon: common).isEmpty)
         check("typing: numbers and Chinese are never learned this way", TypingRules.pairs(previous: "the model X is here", current: "the model 3000 is here", isCommon: common).isEmpty && TypingRules.pairs(previous: "我喜欢排行", current: "我喜欢排名", isCommon: common).isEmpty)
-        check("typing: password managers, terminals and FreeFlow itself are never looked at", TypingRules.skips(bundle: "com.1password.1password") && TypingRules.skips(bundle: "com.apple.Terminal") && TypingRules.skips(bundle: "com.googlecode.iterm2") && TypingRules.skips(bundle: "com.momominibot.freeflow") && !TypingRules.skips(bundle: "com.apple.TextEdit"))
+        check("typing: password managers, terminals and Purrscribe itself are never looked at", TypingRules.skips(bundle: "com.1password.1password") && TypingRules.skips(bundle: "com.apple.Terminal") && TypingRules.skips(bundle: "com.googlecode.iterm2") && TypingRules.skips(bundle: "com.momominibot.freeflow") && !TypingRules.skips(bundle: "com.apple.TextEdit"))
 
         // "keep a clear fix the first time": the fixes from a real day of typing, and the junk that came with them
         let P = { (a: String, b: String) in Learning.Pair(wrong: a, right: b) }
@@ -853,8 +854,307 @@ if args.contains("--test") {
         return FileManager.default.fileExists(atPath: base.appendingPathComponent("Brand/art/\(name).webp").path)
     })
 
+    // Colourways (10 Nov 2026): Dreamy and Sunset both read well in light and dark, and Sunset has its own cat-only pictures.
+    func channels(_ c: NSColor, _ ap: NSAppearance) -> (r: CGFloat, g: CGFloat, b: CGFloat) {
+        var out: (r: CGFloat, g: CGFloat, b: CGFloat) = (-1, -1, -1)
+        ap.performAsCurrentDrawingAppearance {
+            if let s = c.usingColorSpace(.sRGB) { out = (s.redComponent, s.greenComponent, s.blueComponent) }
+        }
+        return out
+    }
+    func luminance(_ c: Color, _ ap: NSAppearance) -> CGFloat {
+        let v = channels(NSColor(c), ap)
+        func lin(_ x: CGFloat) -> CGFloat { x <= 0.03928 ? x / 12.92 : pow((x + 0.055) / 1.055, 2.4) }
+        return 0.2126 * lin(v.r) + 0.7152 * lin(v.g) + 0.0722 * lin(v.b)
+    }
+    func contrast(_ a: Color, _ b: Color, _ ap: NSAppearance) -> CGFloat {
+        let la = luminance(a, ap), lb = luminance(b, ap)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+    }
+    let savedWay = Colorway.current
+    check("colours: two colourways with their own titles", Colorway.allCases.count == 2 && Set(Colorway.allCases.map { $0.chipTitle }).count == 2)
+    for way in Colorway.allCases {
+        Colorway.current = way
+        for (label, ap) in [("light", aqua), ("dark", darkAqua)] {
+            let tag = "colours: \(way.chipTitle) \(label)"
+            check("\(tag): ink is easy to read on the page", contrast(RT.ink, RT.paper, ap) >= 7)
+            check("\(tag): ink is easy to read on a card", contrast(RT.ink, RT.card, ap) >= 7)
+            check("\(tag): the quieter ink still passes on the page", contrast(RT.ink2, RT.paper, ap) >= 4.5)
+            check("\(tag): headings in plum pass on the page", contrast(RT.plum, RT.paper, ap) >= 7)
+            check("\(tag): the accent text passes on the page", contrast(RT.mauve, RT.paper, ap) >= 3)
+        }
+    }
+    Colorway.current = .sunset
+    let sunLight = channels(RT.windowBackground, aqua), sunDark = channels(RT.windowBackground, darkAqua)
+    check("colours: the Sunset page is cream (pale, warm) in light", sunLight.r > 0.95 && sunLight.r > sunLight.b + 0.05)
+    check("colours: the Sunset page is dark brown (dark, warm) at night", sunDark.r < 0.2 && sunDark.r > sunDark.b)
+    Colorway.current = .dreamy
+    let dreamLight = channels(RT.windowBackground, aqua)
+    check("colours: the Dreamy page is still lavender (blue above red)", dreamLight.b > dreamLight.r)
+    Colorway.current = .sunset
+    check("colours: the dark chip says brown in Sunset", AppearanceChoice.dark.chipTitle, "Dark brown")
+    Colorway.current = .dreamy
+    check("colours: the dark chip says purple in Dreamy", AppearanceChoice.dark.chipTitle, "Dark purple")
+    let sunsetNames = ["hello", "learning", "meetings", "modes", "files", "snippets", "words", "sleepy", "kitten", "hero-hug", "hero-listen", "hero-note", "hero-sleep"]
+    check("colours: every Sunset picture is bundled", sunsetNames.allSatisfy { name in
+        guard let base = Bundle.main.resourceURL else { return false }
+        return FileManager.default.fileExists(atPath: base.appendingPathComponent("Brand/art/sunset/\(name).webp").path)
+    })
+    Colorway.current = .dreamy
+    let dreamyHello = Art.catImage("hello")
+    Colorway.current = .sunset
+    let sunsetHello = Art.catImage("hello")
+    check("colours: Sunset swaps in its own picture", dreamyHello != nil && sunsetHello != nil && dreamyHello !== sunsetHello)
+    check("colours: a picture Sunset does not have falls back to the Dreamy one", { () -> Bool in
+        Colorway.current = .sunset
+        return Art.catImage("hero-black") != nil
+    }())
+
+    // The cats: one is out, the other two lie down; they stay on their strip, rest and sleep, and take turns.
+    let runner = CatRunnerState()
+    var tCat: TimeInterval = 1000
+    var sawSitting = false, sawSleeping = false, sawLounging = false, sawCats = Set<Int>(), onTrack = true, loungeOK = true, frameOK = true
+    for _ in 0..<(30 * 600) {
+        tCat += 1.0 / 30
+        runner.step(now: tCat, width: 600, height: 90)
+        if runner.x < CatRunnerState.wandZone + 3.9 || runner.x > 600 - CatRunnerState.rightMargin - 3.9 { onTrack = false }
+        if runner.mode == .sitting { sawSitting = true }
+        if runner.mode == .sleeping { sawSleeping = true }
+        if runner.mode == .lounging { sawLounging = true }
+        if runner.lounge.count != 2 || runner.lounge[runner.who] != nil { loungeOK = false }
+        if runner.frame < 0 || runner.frame >= CatRunnerState.frames { frameOK = false }
+        sawCats.insert(runner.who)
+    }
+    check("cats: the one that is out stays on the strip, clear of the wand's place and the edge, for ten minutes", onTrack)
+    check("cats: the other two always lie down somewhere", loungeOK)
+    check("cats: the walk cycle always shows one of its eight pictures", frameOK)
+    check("cats: sits down now and then", sawSitting)
+    check("cats: lies down for a lazy while now and then", sawLounging)
+    check("cats: falls asleep now and then", sawSleeping)
+    check("cats: all three that are chosen take a turn", sawCats.count == CatRunnerState.rosterMax && sawCats.isSubset(of: Set(runner.roster)))
+    let jump = CatRunnerState(); jump.mode = .running; jump.step(now: 50, width: 600)
+    let beforeJump = jump.x
+    jump.step(now: 90, width: 600)
+    check("cats: a long pause moves it one frame, not across the bar", abs(jump.x - beforeJump) <= CatRunnerState.speed * 0.1 + 0.01)
+    let poked = CatRunnerState(); poked.step(now: 10, width: 600); poked.poke(now: 10.2)
+    check("cats: a tap sends a heart and a jump", poked.hearts.count == 1 && poked.lift(now: 10.45) > 8)
+    let napper = CatRunnerState(); napper.step(now: 10, width: 600); napper.mode = .sleeping; napper.until = 99; napper.poke(now: 11)
+    check("cats: a tap wakes a sleeping cat", napper.mode == .sitting)
+    let swapper = CatRunnerState(); swapper.step(now: 10, width: 600)
+    let wasOut = swapper.who, comesOut = swapper.lounge.keys.sorted()[0]
+    swapper.wake(comesOut, now: 10.1)
+    check("cats: a tap on a cat that is lying down gets it up, and the one that was out lies down", swapper.who == comesOut && swapper.lounge[wasOut] != nil && swapper.lounge.count == 2)
+    let sleeper = CatRunnerState(); sleeper.step(now: 10, width: 600); sleeper.mode = .sleeping; sleeper.until = 10.5
+    let sleptWho = sleeper.who
+    sleeper.step(now: 11, width: 600)
+    check("cats: when the sleeper has slept enough the next cat gets up and it stays lying down", sleeper.who != sleptWho && sleeper.lounge[sleptWho] != nil && sleeper.lounge.count == 2 && sleeper.mode == .running)
+
+    // Play. A clock that runs the cat for a few seconds, with something done to it on every frame.
+    func play(_ s: CatRunnerState, _ t: inout TimeInterval, _ seconds: Double, each: (() -> Void)? = nil) {
+        for _ in 0..<Int(seconds * 30) { t += 1.0 / 30; s.step(now: t, width: 600, height: 90); each?() }
+    }
+    // The ball: pick it up, let go with a flick, and the cat runs after it, catches it, and bats it away again.
+    let ballCat = CatRunnerState(); var tB: TimeInterval = 100
+    play(ballCat, &tB, 0.2)
+    check("toy box: nothing is out on the strip to begin with", !ballCat.ballOut && !ballCat.wandOut && ballCat.treat == nil)
+    ballCat.beginBall(at: CGPoint(x: 300, y: 50), now: tB)
+    check("toy box: a ball that is still in the box cannot be picked up", ballCat.held == .none)
+    ballCat.toggle(.ball, fromX: 300, now: tB)
+    check("toy box: a click bounces the ball out of the box, up from where the toy box is", ballCat.ballOut && ballCat.bvy > 300 && abs(ballCat.bx - 300) < 0.1)
+    play(ballCat, &tB, 0.3)
+    ballCat.beginBall(at: CGPoint(x: 300, y: 50), now: tB)
+    for i in 1...4 { ballCat.drag(to: CGPoint(x: 300 + CGFloat(i) * 12, y: 50 - CGFloat(i) * 4), now: tB + Double(i) * 0.02) }
+    tB += 0.08; ballCat.release(now: tB)
+    check("ball: a flick sends it off with the speed of your hand", ballCat.bvx > 100 && ballCat.bvy > 50 && ballCat.thrown == 1)
+    var ballInside = true, sawChase = false
+    play(ballCat, &tB, 14) {
+        if ballCat.bx < CatRunnerState.wandZone - 0.1 || ballCat.bx > 600 - CatRunnerState.rightMargin + 0.1 || ballCat.by < CatRunnerState.ballR - 0.1 || ballCat.by > 90 { ballInside = false }
+        if ballCat.mode == .chasing { sawChase = true }
+    }
+    check("ball: it bounces about inside the strip", ballInside)
+    check("ball: the cat chases it, catches it and bats it away", sawChase && ballCat.caught >= 1)
+    var chasing = 0, frames = 0
+    play(ballCat, &tB, 60) { frames += 1; if ballCat.mode == .chasing || ballCat.mode == .pouncing { chasing += 1 } }
+    check("ball: left alone the cat does not play all the time", frames - chasing > frames / 3)
+    // Holding the ball still above the cat: the cat waits under it and does not catch it out of your hand.
+    let teaseCat = CatRunnerState(); var tT: TimeInterval = 100
+    play(teaseCat, &tT, 0.2)
+    teaseCat.toss(.ball, fromX: 200, now: tT)
+    play(teaseCat, &tT, 0.1)
+    teaseCat.beginBall(at: CGPoint(x: 200, y: 20), now: tT)
+    play(teaseCat, &tT, 5) { teaseCat.drag(to: CGPoint(x: 200, y: 20), now: teaseCat.last) }
+    check("ball: held in your hand it stays there, and the cat comes under it", abs(teaseCat.bx - 200) < 0.1 && abs(teaseCat.x - 200) < 20 && teaseCat.caught == 0)
+    teaseCat.release(now: tT)
+    // Back in the box: the cat stops wanting it, and what you were holding is let go.
+    teaseCat.toggle(.ball, fromX: 0, now: tT)
+    var stillChasing = false
+    play(teaseCat, &tT, 6) { if teaseCat.mode == .chasing || teaseCat.mode == .pouncing { stillChasing = true } }
+    check("toy box: a second click puts the ball back in the box and the cat loses interest", !teaseCat.ballOut && teaseCat.held == .none && !stillChasing)
+    let quickCat = CatRunnerState(); var tQ: TimeInterval = 100
+    play(quickCat, &tQ, 0.2)
+    quickCat.toss(.ball, fromX: 200, now: tQ)
+    play(quickCat, &tQ, 3)
+    quickCat.beginBall(at: CGPoint(x: quickCat.bx, y: 90 - 4 - quickCat.by), now: tQ)
+    tQ += 0.1; quickCat.release(now: tQ)
+    tQ += 0.15
+    quickCat.beginBall(at: CGPoint(x: quickCat.bx, y: 90 - 4 - quickCat.by), now: tQ)
+    check("toy box: a double click on the ball on the strip puts it back", !quickCat.ballOut && quickCat.held == .none)
+
+    // The wand: the ribbon swings from the tip on a string of fixed length, and the cat leaps for it.
+    let wandCat = CatRunnerState(); var tW: TimeInterval = 100
+    play(wandCat, &tW, 0.2)
+    wandCat.beginWand(at: CGPoint(x: 20, y: 80), now: tW)
+    check("toy box: a wand that is still in the box cannot be picked up", wandCat.held == .none)
+    wandCat.toggle(.wand, fromX: 0, now: tW)
+    check("toy box: a click puts the wand out at the left end", wandCat.wandOut)
+    wandCat.beginWand(at: CGPoint(x: 20, y: 80), now: tW)
+    var stringOK = true, wandInside = true
+    let tw0 = tW
+    play(wandCat, &tW, 14) {
+        let d = ((wandCat.lureX - wandCat.tipX) * (wandCat.lureX - wandCat.tipX) + (wandCat.lureY - wandCat.tipY) * (wandCat.lureY - wandCat.tipY)).squareRoot()
+        if d > CatRunnerState.stringLength + 0.5 { stringOK = false }          // checked straight after the clock moved it, before the hand moves again
+        let a = (wandCat.last - tw0) * 1.6
+        wandCat.drag(to: CGPoint(x: 300 + CGFloat(sin(a)) * 90, y: 90 - 4 - 14 - CGFloat(cos(a * 1.3)) * 8), now: wandCat.last)
+        if wandCat.x < CatRunnerState.wandZone + 3.9 || wandCat.x > 600 - CatRunnerState.rightMargin - 3.9 { wandInside = false }
+    }
+    check("wand: the ribbon never gets further from the tip than the string is long", stringOK)
+    check("wand: the cat leaps for it and swats it", wandCat.swats >= 2 && wandInside)
+    wandCat.release(now: tW)
+    play(wandCat, &tW, 6)
+    check("wand: let go, it goes back to its place and the cat settles", !wandCat.wandHeld && !(wandCat.mode == .chasing && wandCat.goal == .wand))
+    wandCat.toggle(.wand, fromX: 0, now: tW)
+    check("toy box: a second click puts the wand back", !wandCat.wandOut)
+
+    // Feeding: drag a biscuit out of the bowl and let go; the cat eats it; later there is a pile, and a tap cleans it up.
+    let feedCat = CatRunnerState(); var tF: TimeInterval = 100
+    play(feedCat, &tF, 0.2)
+    feedCat.beginTreat(at: CGPoint(x: 500, y: 70), now: tF)
+    check("feeding: with no biscuit out there is nothing to pick up", feedCat.held == .none && feedCat.treat == nil)
+    feedCat.toggle(.biscuit, fromX: 500, now: tF)
+    check("feeding: a click on the biscuit bounces one out of the box", feedCat.treat != nil && feedCat.treat?.vy ?? 0 > 200)
+    feedCat.toggle(.biscuit, fromX: 400, now: tF)
+    check("feeding: one biscuit at a time", abs((feedCat.treat?.x ?? 0) - 500) < 40)
+    play(feedCat, &tF, 0.1)
+    feedCat.beginTreat(at: CGPoint(x: feedCat.treat?.x ?? 500, y: 90 - 4 - (feedCat.treat?.y ?? 10)), now: tF)
+    check("feeding: a biscuit on the strip can be picked up", feedCat.held == .treat && feedCat.treat?.held == true)
+    feedCat.drag(to: CGPoint(x: 480, y: 30), now: tF + 0.05)
+    tF += 0.1; feedCat.release(now: tF)
+    var sawEating = false
+    play(feedCat, &tF, 9) { if feedCat.mode == .eating { sawEating = true } }
+    check("feeding: the biscuit falls to the floor and the cat comes and eats it", sawEating && feedCat.fed == 1 && feedCat.treat == nil)
+    play(feedCat, &tF, 45)
+    check("feeding: some time later it leaves a pile", feedCat.poops.count == 1)
+    if let pile = feedCat.poops.first { feedCat.clean(born: pile.born, now: tF) }
+    check("feeding: a tap cleans the pile up, with sparkles", feedCat.poops.isEmpty && feedCat.cleaned == 1 && feedCat.sparkles.count == 5)
+    check("mouse: with nothing out, only the cats react", feedCat.hotRects().count == 3)
+    feedCat.toss(.ball, fromX: 300, now: tF); feedCat.toss(.wand, fromX: 0, now: tF)
+    check("mouse: the ball and the wand react once they are out", feedCat.hotRects().count == 5)
+    let hand = CatRunnerState(); hand.step(now: 5, width: 600, height: 90); hand.toss(.ball, fromX: 100, now: 5); hand.beginBall(at: CGPoint(x: 100, y: 40), now: 5)
+    check("mouse: with something in your hand the whole strip reacts", hand.hotRects() == [CGRect(x: 0, y: 0, width: 600, height: 90)])
+
+    // Choosing the cats: up to three, one always stays, and the one that is out stays if it is still chosen.
+    let pick = CatRunnerState(); var tR: TimeInterval = 100
+    play(pick, &tR, 0.5)
+    check("roster: the first three cats to begin with", pick.roster.map { CatRunnerState.names[$0] } == CatRunnerState.defaultRoster && pick.lounge.count == 2)
+    pick.setRoster(["smoky", "snowy", "cocoa", "black", "cream"], now: tR)
+    check("roster: no more than three at a time", pick.roster.count == CatRunnerState.rosterMax)
+    play(pick, &tR, 0.5)
+    check("roster: the cat that is out is one of the new ones, and the others lie down", pick.roster.contains(pick.who) && pick.lounge.count == 2 && Set(pick.lounge.keys).isSubset(of: Set(pick.roster)) && !pick.lounge.keys.contains(pick.who))
+    pick.setRoster(["cocoa"], now: tR)
+    play(pick, &tR, 0.5)
+    check("roster: one cat is allowed, and it lives alone", pick.roster.count == 1 && pick.lounge.isEmpty && CatRunnerState.names[pick.who] == "cocoa")
+    var aloneOK = true
+    for _ in 0..<(30 * 300) { tR += 1.0 / 30; pick.step(now: tR, width: 600, height: 90); if pick.who != pick.roster[0] || !pick.lounge.isEmpty { aloneOK = false } }
+    check("roster: a cat on its own sleeps and wakes and never goes anywhere else", aloneOK)
+    pick.setRoster(["nonsense"], now: tR)
+    check("roster: names that are not cats are ignored and the first three come back", pick.roster.count == 3)
+    let pickEarly = CatRunnerState(); pickEarly.setRoster(["snowy", "black"], now: 1)
+    play(pickEarly, &tR, 0.5)
+    check("roster: chosen before the strip starts", pickEarly.who == 4 && pickEarly.lounge.keys.sorted() == [2])
+
+    check("cats: every cat has a walking strip, a sitting picture and a lying picture in both colourways", [Colorway.dreamy, .sunset].allSatisfy { way in
+        Colorway.current = way
+        return CatRunnerState.names.allSatisfy { n in
+            guard let strip = Art.catImage("walk-\(n)") else { return false }
+            return Art.catImage("runner-\(n)") != nil && Art.catImage("runner-sleep-\(n)") != nil && strip.size.width / strip.size.height > 5
+        }
+    })
+    check("cats: every cat is drawn on the same canvas in each pose, so they all come out the same size and stand on the same line", [Colorway.dreamy, .sunset].allSatisfy { way in
+        Colorway.current = way
+        return ["runner-", "runner-sleep-", "walk-"].allSatisfy { pose in
+            let sizes = CatRunnerState.names.compactMap { Art.catImage(pose + $0)?.size }
+            return sizes.count == CatRunnerState.names.count && Set(sizes.map { "\($0.width)x\($0.height)" }).count == 1
+        }
+    })
+    check("cats: the toys have pictures in both colourways", [Colorway.dreamy, .sunset].allSatisfy { way in
+        Colorway.current = way
+        return ["toy-ball", "toy-poop", "toy-fish"].allSatisfy { Art.catImage($0) != nil }
+    })
+    Colorway.current = .dreamy
+    check("cats: the Sunset cats and toys are not the Dreamy ones", { () -> Bool in
+        func look(_ way: Colorway, _ name: String) -> Data? { Colorway.current = way; return Art.catImage(name)?.tiffRepresentation }
+        let pairs = ["runner-ginger", "walk-cream", "toy-ball"].map { (look(.dreamy, $0), look(.sunset, $0)) }
+        return pairs.allSatisfy { $0.0 != nil && $0.1 != nil && $0.0 != $0.1 }
+    }())
+    Colorway.current = savedWay
+
+    // Cat size (11 Nov 2026): a preference that only changes how big the strip is drawn, nothing about how the cats play.
+    check("cat size: the saved names read back as their sizes", CatSize.allCases.allSatisfy { CatSize.from($0.rawValue) == $0 })
+    check("cat size: nothing saved, or something unknown, is medium", CatSize.from(nil) == .medium && CatSize.from("") == .medium && CatSize.from("huge") == .medium)
+    check("cat size: small is smaller than medium, medium is the usual 1, large is bigger",
+          CatSize.small.scale < CatSize.medium.scale && CatSize.medium.scale == 1 && CatSize.large.scale > CatSize.medium.scale)
+    check("cat size: the iPhone's sizes are in the same order, medium is the usual",
+          CatSize.small.phoneScale < CatSize.medium.phoneScale && CatSize.medium.phoneScale == 1 && CatSize.medium.phoneScale < CatSize.large.phoneScale)
+    check("cat size: every size is inside what the strip can draw", CatSize.allCases.allSatisfy { CatRunner.scaleRange.contains($0.scale) && CatRunner.scaleRange.contains($0.phoneScale) })
+    check("cat size: the strip above the window has room for the biggest cat to jump and send a heart up",
+          CatPerch.want / CatSize.large.scale >= CatRunner.catHeight + 34)
+    let sized = CatRunnerState()
+    sized.step(now: 5000, width: 600 / 1.4, height: 117 / 1.4, floorInset: 1 / 1.4, scale: 1.4)
+    check("cat size: the strip remembers how big it is drawn (the pointer and the toy box need it)", sized.scale == 1.4)
+    sized.step(now: 5001, width: 600)
+    check("cat size: a strip drawn as it is has scale 1", sized.scale == 1)
+    let bigCat = CatRunnerState()
+    var tBig: TimeInterval = 9000, bigOnTrack = true
+    let bigWidth = 600 / CatSize.large.scale
+    for _ in 0..<(30 * 120) {
+        tBig += 1.0 / 30
+        bigCat.step(now: tBig, width: bigWidth, height: 117 / CatSize.large.scale, floorInset: 1 / CatSize.large.scale, scale: CatSize.large.scale)
+        if bigCat.x < CatRunnerState.wandZone + 3.9 || bigCat.x > bigWidth - CatRunnerState.rightMargin - 3.9 { bigOnTrack = false }
+    }
+    check("cat size: at Large the cat still stays on its narrower strip for two minutes", bigOnTrack)
+
+    // The free local model: what the Mac has for it, decided from the answer alone (no network, no Ollama needed to run these).
+    let tags = Data(#"{"models":[{"name":"qwen3.5:9b","size":7640000000},{"name":"llama3.2:latest"},{"model":"no-name"}]}"#.utf8)
+    check("local model: Ollama's list is read into names", LocalModel.names(from: tags) == ["qwen3.5:9b", "llama3.2:latest"])
+    check("local model: an empty list is an answer, not silence", LocalModel.names(from: Data(#"{"models":[]}"#.utf8)) == [])
+    check("local model: something that is not Ollama's list is no answer", LocalModel.names(from: Data(#"{"error":"nope"}"#.utf8)) == nil)
+    check("local model: a web page and an empty reply are no answer", LocalModel.names(from: Data("<html></html>".utf8)) == nil && LocalModel.names(from: Data()) == nil)
+    check("local model: the exact name is found", LocalModel.hasModel(["qwen3.5:9b"], wanted: "qwen3.5:9b"))
+    check("local model: a :latest copy counts", LocalModel.hasModel(["mistral:latest"], wanted: "mistral"))
+    check("local model: another tag of the same name counts", LocalModel.hasModel(["qwen3.5:9b-q4"], wanted: "qwen3.5:9b"))
+    check("local model: a different model does not", !LocalModel.hasModel(["llama3.2:3b"], wanted: "qwen3.5:9b"))
+    check("local model: an empty list has nothing", !LocalModel.hasModel([], wanted: "qwen3.5:9b"))
+    check("local model: nothing answering and no Ollama is not installed", LocalModel.status(installed: false, answered: nil, wanted: "m") == .notInstalled)
+    check("local model: nothing answering with Ollama on disk is not running", LocalModel.status(installed: true, answered: nil, wanted: "m") == .notRunning)
+    check("local model: Ollama answering without the model is missing it", LocalModel.status(installed: true, answered: ["x"], wanted: "m") == .missingModel("m"))
+    check("local model: Ollama answering with the model is ready", LocalModel.status(installed: true, answered: ["m:latest"], wanted: "m") == .ready("m"))
+    check("local model: an answer beats the disk, so Ollama in a container still counts", LocalModel.status(installed: false, answered: ["m"], wanted: "m") == .ready("m"))
+    check("local model: only ready is ready, and only the answering states are running",
+          LocalModel.Status.ready("m").isReady && !LocalModel.Status.missingModel("m").isReady && !LocalModel.Status.notRunning.isReady
+          && LocalModel.Status.missingModel("m").isRunning && LocalModel.Status.ready("m").isRunning && !LocalModel.Status.notInstalled.isRunning && !LocalModel.Status.checking.isRunning)
+    let aiSentences = [LocalModel.Status.checking, .notInstalled, .notRunning, .missingModel("m"), .ready("m")].map(LocalModel.summary)
+    check("local model: every state has a plain sentence with no em dash", aiSentences.allSatisfy { !$0.isEmpty && !$0.contains("\u{2014}") })
+    check("local model: the recommended model is the one the setting starts as", LocalModel.recommended == "qwen3.5:9b" && LocalModel.downloadURL.host == "ollama.com")
+
+    // The three ways to get Purrscribe: a checkout link only counts when it is a plain https link with a host.
+    check("plans: an https checkout link is used", Plans.checkoutURL(from: "https://buy.stripe.com/test_abc")?.host == "buy.stripe.com")
+    check("plans: stray spaces and a newline around the link are trimmed", Plans.checkoutURL(from: "  https://buy.stripe.com/x \n") != nil)
+    check("plans: http, javascript, empty, hostless and missing links are no checkout",
+          ["http://buy.stripe.com/x", "javascript:alert(1)", "", "   ", "https://", "buy.stripe.com/x"].allSatisfy { Plans.checkoutURL(from: $0) == nil } && Plans.checkoutURL(from: nil) == nil)
+    check("plans: the source link points at GitHub over https", Plans.sourceURL.scheme == "https" && Plans.sourceURL.host == "github.com")
+
     // MCP page: every app copies what that app expects.
-    let mcpScript = "/Applications/FreeFlow.app/Contents/Resources/freeflow-mcp.py"
+    let mcpScript = "/Applications/Purrscribe.app/Contents/Resources/freeflow-mcp.py"
     func mcpText(_ id: String, _ script: String = mcpScript) -> String { MCPApps.app(id)?.text(script) ?? "" }
     func mcpObject(_ id: String) -> [String: Any]? {
         guard let data = mcpText(id).data(using: .utf8) else { return nil }
@@ -865,16 +1165,28 @@ if args.contains("--test") {
         return ((key.isEmpty ? root : root[key] as? [String: Any]) ?? [:])["freeflow"] as? [String: Any]
     }
     check("mcp: the app ids are unique", Set(MCPApps.all.map { $0.id }).count == MCPApps.all.count)
+    check("mcp: Claude and ChatGPT each share one tile between two setups, every other app has its own", {
+        let shared = MCPApps.tiles.filter { $0.apps.count > 1 }
+        let claude = shared.first { $0.name == "Claude" }?.apps.map { $0.id } ?? []
+        let chatgpt = shared.first { $0.name == "ChatGPT" }?.apps.map { $0.id } ?? []
+        return shared.count == 2 && claude == ["claude", "claudecode"] && chatgpt == ["chatgpt", "codex"]
+            && MCPApps.tiles.count == MCPApps.all.count - 2
+    }())
+    check("mcp: every app is on exactly one tile and the tile names are unique", {
+        let onTiles = MCPApps.tiles.flatMap { $0.apps.map { $0.id } }
+        return onTiles.sorted() == MCPApps.all.map { $0.id }.sorted() && Set(MCPApps.tiles.map { $0.name }).count == MCPApps.tiles.count
+    }())
+    check("mcp: on a shared tile each button has its own short label", MCPApps.tiles.filter { $0.apps.count > 1 }.allSatisfy { tile in
+        let labels = tile.apps.compactMap { $0.label }
+        return labels.count == tile.apps.count && Set(labels).count == labels.count && labels.allSatisfy { !$0.isEmpty && $0.count <= 8 }
+    })
     check("mcp: Claude Code copies the documented one-liner", mcpText("claudecode"), "claude mcp add --scope user freeflow -- /usr/bin/env python3 \"\(mcpScript)\"")
     check("mcp: Codex copies codex mcp add", mcpText("codex"), "codex mcp add freeflow -- /usr/bin/env python3 \"\(mcpScript)\"")
     check("mcp: Gemini adds it for every project", mcpText("gemini").hasPrefix("gemini mcp add -s user freeflow /usr/bin/env python3 "))
     check("mcp: Hermes uses --args last", mcpText("hermes").hasSuffix("--args python3 \"\(mcpScript)\""))
     check("mcp: Claude Desktop copies an mcpServers entry", (mcpEntry("claude", key: "mcpServers")?["command"] as? String) == "/usr/bin/env")
     check("mcp: Cursor says stdio", (mcpEntry("cursor", key: "mcpServers")?["type"] as? String) == "stdio")
-    check("mcp: Cline keeps the server enabled", (mcpEntry("cline", key: "mcpServers")?["disabled"] as? Bool) == false)
-    check("mcp: Trae and the generic entry are plain mcpServers", mcpEntry("trae", key: "mcpServers") != nil && mcpEntry("other", key: "mcpServers") != nil)
-    check("mcp: Zed uses context_servers, not mcpServers", mcpEntry("zed", key: "context_servers") != nil && mcpObject("zed")?["mcpServers"] == nil)
-    check("mcp: Warp gets the bare server entry", mcpEntry("warp", key: "") != nil && mcpObject("warp")?["mcpServers"] == nil)
+    check("mcp: the generic entry is a plain mcpServers list", mcpEntry("other", key: "mcpServers") != nil)
     check("mcp: ChatGPT and Doubao copy the fields to fill in", ["chatgpt", "doubao"].allSatisfy { mcpText($0).contains("Type: STDIO") && mcpText($0).hasSuffix("Arguments: \(mcpScript)") })
     check("mcp: VS Code copies code --add-mcp with valid JSON", {
         let t = mcpText("vscode")
@@ -884,14 +1196,19 @@ if args.contains("--test") {
         return obj["name"] as? String == "freeflow" && obj["type"] as? String == "stdio"
     }())
     check("mcp: a path with a quote is made safe for the shell", mcpText("claudecode", "/tmp/it's here/freeflow-mcp.py").hasSuffix("python3 '/tmp/it'\\''s here/freeflow-mcp.py'"))
-    check("mcp: every bundled brand picture is there", MCPApps.all.compactMap { $0.glyph }.allSatisfy { Art.appLogo($0) != nil })
+    check("mcp: every bundled brand picture is there", MCPApps.all.flatMap { [$0.glyph, $0.icon].compactMap { $0 } }.allSatisfy { Art.appLogo($0) != nil })
+    check("mcp: the Hermes picture ships with Nous Research's MIT notice", {
+        guard MCPApps.all.first(where: { $0.id == "hermes" })?.icon == "hermes",
+              let text = try? String(contentsOfFile: (Bundle.main.resourcePath ?? "") + "/Brand/apps/NOTICE.txt", encoding: .utf8) else { return false }
+        return text.contains("Copyright (c) 2025 Nous Research") && text.contains("Permission is hereby granted")
+    }())
     check("mcp: each app has steps and no em dash anywhere", MCPApps.all.allSatisfy { !$0.steps.isEmpty && !$0.steps.contains("\u{2014}") && !$0.name.contains("\u{2014}") })
 
     check("polish: Rewriter and the guard agree on numbers",Rewriter.numbers("75,000 and 3") == RewriteGuard.numbers("75,000 and 3"))
     check("polish: a short word list is offered without Harper", HarperEngine.isLinked || !GrammarChecker.synonyms(for: "good").isEmpty)
     check("polish: synonyms of good are the hand-picked ones", GrammarChecker.synonyms(for: "good").first == "great")
     check("polish: synonyms of nothing are nothing", GrammarChecker.synonyms(for: "  ").isEmpty && GrammarChecker.synonyms(for: "two words").isEmpty)
-    check("polish: an e-mail address is left alone", GrammarChecker.check("Mail jamie@emis.asia today.").isEmpty)
+    check("polish: an e-mail address is left alone", GrammarChecker.check("Mail jamie@example.com today.").isEmpty)
     check("polish: a file name is left alone", GrammarChecker.check("Open the notes in meetingnotes.pdf now.").filter { $0.kind.isCorrectness }.isEmpty)
     check("polish: a word with a symbol in your dictionary is left alone", GrammarChecker.autoFix("We sell EMIS+ plans.", words: ["EMIS+"]).text == "We sell EMIS+ plans.")
     check("polish: its not becomes it's not", fixed("Its not ready."), "It's not ready.")
@@ -916,7 +1233,7 @@ if args.contains("--test") {
     exit(fails == 0 ? 0 : 1)
 }
 
-// FreeFlow --probe-learn "typed text": watches the focused text box the way the app does after typing,
+// Purrscribe --probe-learn "typed text": watches the focused text box the way the app does after typing,
 // prints what it would learn from your edits, and saves nothing. For checking the learning against a real app.
 if let i = args.firstIndex(of: "--probe-learn"), i + 1 < args.count {
     Learning.dryRun = true
@@ -939,7 +1256,7 @@ if let i = args.firstIndex(of: "--probe-learn"), i + 1 < args.count {
     exit(0)
 }
 
-// FreeFlow --probe-meetings: lists every app that is recording from a microphone right now and whether it counts as a call.
+// Purrscribe --probe-meetings: lists every app that is recording from a microphone right now and whether it counts as a call.
 if args.contains("--probe-meetings") {
     print("supported: \(MicWatch.supported)   accessibility (window titles): \(AXIsProcessTrusted())")
     let clients = MicWatch.clients()
@@ -954,7 +1271,7 @@ if args.contains("--probe-meetings") {
     exit(0)
 }
 
-// FreeFlow --status: what macOS has granted this app, and whether the speech engine is in place.
+// Purrscribe --status: what macOS has granted this app, and whether the speech engine is in place.
 if args.contains("--status") {
     let mic = ["notDetermined", "restricted", "denied", "authorized"][AVCaptureDevice.authorizationStatus(for: .audio).rawValue]
     print("accessibility (typing into apps): \(AXIsProcessTrusted() ? "granted" : "NOT granted")")
@@ -966,14 +1283,14 @@ if args.contains("--status") {
     exit(0)
 }
 
-// FreeFlow --debug-post down|up|command|lock: drive the running app (debugTriggers must be on).
+// Purrscribe --debug-post down|up|command|lock: drive the running app (debugTriggers must be on).
 if let i = args.firstIndex(of: "--debug-post"), i + 1 < args.count {
     DistributedNotificationCenter.default().postNotificationName(
         Notification.Name("com.momominibot.freeflow.debug"), object: args[i + 1], userInfo: nil, deliverImmediately: true)
     exit(0)
 }
 
-// FreeFlow --render-ui <folder>: draws the window pages and the floating bar to PNG files, without showing anything.
+// Purrscribe --render-ui <folder>: draws the window pages and the floating bar to PNG files, without showing anything.
 if let i = args.firstIndex(of: "--render-ui"), i + 1 < args.count {
     let dir = URL(fileURLWithPath: args[i + 1], isDirectory: true)
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -981,6 +1298,27 @@ if let i = args.firstIndex(of: "--render-ui"), i + 1 < args.count {
     Fonts.registerAll()
     UIShots.render(to: dir)
     exit(0)
+}
+
+// Purrscribe --perch-demo [seconds]: opens only the Studio window, with the cats on top of it, for looking at them: no microphone, no
+// hotkeys, nothing else started. FF_SHOT_COLOURWAY=sunset|dreamy picks the colours for this run only.
+if let i = args.firstIndex(of: "--perch-demo") {
+    let seconds = i + 1 < args.count ? Double(args[i + 1]) ?? 20 : 20
+    let demoApp = NSApplication.shared
+    Fonts.registerAll()
+    if let way = ProcessInfo.processInfo.environment["FF_SHOT_COLOURWAY"], let c = Colorway(rawValue: way) { Colorway.current = c }
+    let bridge = AppBridge()
+    bridge.status = { ("Whisper · offline, no word limit", true) }
+    bridge.aiReady = { true }
+    let studio = StudioWindowController(bridge: bridge)
+    demoApp.setActivationPolicy(.regular)
+    studio.show(page: .home)
+    // FF_SHOT_SETTINGS=general|system|notetaker|mcp|account|team|privacy opens that Settings tab after a moment (for pictures).
+    if let tab = ProcessInfo.processInfo.environment["FF_SHOT_SETTINGS"], let t = SettingsTab(rawValue: tab) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { studio.model.openSettings(t) }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { exit(0) }
+    demoApp.run()
 }
 
 let app = NSApplication.shared

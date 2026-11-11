@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""The cute-cat app icon: the Rhythme kitten on a soft lilac and blush tile.
+"""The cute-cat app icons: the Rhythme kitten on a soft lilac and blush tile (Dreamy), and the ginger cat on a butter and apricot
+tile (Sunset, the second colourway).
 Writes assets/brand/logo-icon-cat.png and assets/brand/AppIcon-cat.icns (the Mac icon, a rounded tile with room around it)
-and ios/App/Assets.xcassets/AppIcon.appiconset/icon.png (the iPhone icon, a full square: iOS rounds the corners itself).
-The kitten is read from $RHYTHME_DREAM or ~/Documents/rhythme-wt/testflight-main/assets/room/dream (orb-kitten-head.webp).
+and ios/App/Assets.xcassets/AppIcon.appiconset/icon.png (the iPhone icon, a full square: iOS rounds the corners itself),
+and assets/brand/logo-icon-sunset.png (the Mac Dock icon while the Sunset colourway is on).
+The cats are read from $RHYTHME_DREAM or ~/Documents/rhythme-wt/testflight-main/assets/room/dream.
 Run:  python3 scripts/art/make_cat_icon.py     (needs Pillow and numpy)"""
-import os, shutil, subprocess, tempfile
+import os, shutil, subprocess, sys, tempfile
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
@@ -62,6 +64,31 @@ def mac_icon():
 def ios_icon():
     return place(gradient((214, 196, 243), (246, 201, 214)), kitten(0.76), dy=6).convert("RGB")
 
+def sunset_icon():
+    """The ginger cat's head and bandana on a butter-to-apricot tile, cut off by the tile's bottom edge like it is peeking in."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import make_sunset_art as sa
+    cat = sa.warm(sa.load("prop-cat-ginger--bandana"))
+    cat = cat.crop((0, 0, cat.width, round(cat.height * 0.66)))
+    cat = cat.crop(cat.getbbox())
+    inset = 100
+    width = round(N * 0.74)
+    cat = cat.resize((width, round(width * cat.height / cat.width)), Image.LANCZOS)
+    bg = gradient((255, 238, 204), (246, 186, 148), light=(255, 250, 238)).convert("RGBA")
+    x, y = (N - width) // 2, N - inset + 6 - cat.height
+    shadow = Image.new("RGBA", (N, N), (0, 0, 0, 0))
+    sh = Image.new("RGBA", cat.size, (120, 70, 40, 0)); sh.putalpha(cat.getchannel("A").filter(ImageFilter.GaussianBlur(22)).point(lambda v: int(v * 0.30)))
+    shadow.alpha_composite(sh, (x, y + 16))
+    scene = Image.alpha_composite(bg, shadow)
+    scene.alpha_composite(cat, (x, y))
+    mask = Image.new("L", (N * 2, N * 2), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((inset * 2, inset * 2, (N - inset) * 2, (N - inset) * 2), radius=int((N - 2 * inset) * 2 * 0.225), fill=255)
+    mask = mask.resize((N, N), Image.LANCZOS)
+    tile = Image.new("RGBA", (N, N), (0, 0, 0, 0)); tile.paste(scene, (0, 0), mask)
+    drop = Image.new("RGBA", (N, N), (110, 60, 30, 0)); drop.putalpha(mask.filter(ImageFilter.GaussianBlur(18)).point(lambda v: int(v * 0.28)))
+    out = Image.new("RGBA", (N, N), (0, 0, 0, 0)); out.alpha_composite(drop, (0, 14)); out.alpha_composite(tile)
+    return out
+
 def write_icns(icon, path):
     tmp = tempfile.mkdtemp(suffix=".iconset")
     for base in (16, 32, 128, 256, 512):
@@ -75,4 +102,5 @@ if __name__ == "__main__":
     mac.save(os.path.join(ROOT, "assets/brand/logo-icon-cat.png"))
     write_icns(mac, os.path.join(ROOT, "assets/brand/AppIcon-cat.icns"))
     ios_icon().save(os.path.join(ROOT, "ios/App/Assets.xcassets/AppIcon.appiconset/icon.png"))
-    print("wrote the Mac and iPhone cat icons")
+    sunset_icon().save(os.path.join(ROOT, "assets/brand/logo-icon-sunset.png"))
+    print("wrote the Mac and iPhone cat icons and the Sunset Dock icon")

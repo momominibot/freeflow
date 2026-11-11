@@ -2,11 +2,11 @@
 
 Searched 9 Nov 2026: r/WisprFlow, r/macapps, r/mac, r/MacOS, r/ClaudeCode, r/cursor, r/ClaudeAI, r/LocalLLaMA, r/ProductivityApps, r/ObsidianMD, r/alternativeto, plus the docs of the apps people name (Wispr Flow, Superwhisper, VoiceInk, MacWhisper, TypeWhisper, Handy, FluidVoice, Pipit, Voibe, Hushtype, OpenWhisper, Minutes). These are reported wishes and complaints from public posts, not measured demand.
 
-Status column: **have** = FreeFlow already does it, **soon** = cheap and planned next, **later** = bigger job, **no** = against how FreeFlow works.
+Status column: **have** = Purrscribe already does it, **soon** = cheap and planned next, **later** = bigger job, **no** = against how Purrscribe works.
 
 ## Trust and reliability (the loudest group)
 
-| Wish | Where it came from | FreeFlow |
+| Wish | Where it came from | Purrscribe |
 |---|---|---|
 | Never lose a dictation: if pasting fails the text waits somewhere ("Unsent text"), and the last one can be re-pasted | Hushtype, Minutes, WhisperTyping re-paste key, OpenWhisper "paste the original of the last dictation" | partly (Copy last result, History); soon: paste-last shortcut and unsent list |
 | Text lands in the wrong place when you click away mid-dictation | r/cursor "Input misplacement", r/WisprFlow paste bugs | soon: remember the target app and copy instead of paste if focus changed |
@@ -20,7 +20,7 @@ Status column: **have** = FreeFlow already does it, **soon** = cheap and planned
 
 ## Privacy and price
 
-| Wish | FreeFlow |
+| Wish | Purrscribe |
 |---|---|
 | Fully on-device, no subscription, one price or free | have (this is the whole point) |
 | Know exactly what leaves the Mac; per-app "keep no history" | have: nothing leaves; soon: per-app no-history |
@@ -28,7 +28,7 @@ Status column: **have** = FreeFlow already does it, **soon** = cheap and planned
 
 ## Writing quality
 
-| Wish | FreeFlow |
+| Wish | Purrscribe |
 |---|---|
 | Cleanup (fillers, self-corrections "no wait, I mean") matters more than raw accuracy | have fillers and AI tidy-up; soon: "scratch that" and take-backs by rule |
 | A creativity dial: let the AI rephrase and expand, not just transcribe ("set Wispr free") | soon: a fourth tidy-up level, Rewrite |
@@ -42,7 +42,7 @@ Status column: **have** = FreeFlow already does it, **soon** = cheap and planned
 
 ## Words and names
 
-| Wish | FreeFlow |
+| Wish | Purrscribe |
 |---|---|
 | Bulk import and export of the dictionary, with misspelling aliases; import from another app | soon: import from text, CSV or JSON; export |
 | Learn spellings from my corrections | have |
@@ -51,7 +51,7 @@ Status column: **have** = FreeFlow already does it, **soon** = cheap and planned
 
 ## Developers dictating to Claude Code and Cursor
 
-| Wish | FreeFlow |
+| Wish | Purrscribe |
 |---|---|
 | File names, paths and variable names must not be altered | have: Code style keeps identifiers; soon: add file names from chosen project folders to the vocabulary |
 | Tag files by voice in Cursor chat | no (needs each editor's chat) |
@@ -61,7 +61,7 @@ Status column: **have** = FreeFlow already does it, **soon** = cheap and planned
 
 ## Meetings
 
-| Wish | FreeFlow |
+| Wish | Purrscribe |
 |---|---|
 | No bot joins the call; both sides recorded on-device | have (mic plus system audio) |
 | Speaker labels | partly (You and Others); later: real speakers |
@@ -73,7 +73,7 @@ Status column: **have** = FreeFlow already does it, **soon** = cheap and planned
 
 ## History
 
-| Wish | FreeFlow |
+| Wish | Purrscribe |
 |---|---|
 | Search, export (Markdown, text, JSON), calendar view | soon: search and export; later: calendar |
 | Switch between the raw and the cleaned text | soon: both are already saved in history |

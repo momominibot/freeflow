@@ -1,6 +1,6 @@
-# FreeFlow MCP: how each app adds a local server (checked 2026-11-10)
+# Purrscribe MCP: how each app adds a local server (checked 2026-11-10)
 
-> The tiles on Settings > MCP are generated from `Sources/MCPApps.swift`, one entry per app below, and the unit checks in `main.swift` keep each copied text in the shape the app expects. Apps that could not be tried on a real install say so in the tile's note. Windsurf (Devin Desktop), Kimi and Qwen Code are researched here but have no tile: their config paths conflict between sources or the command was not confirmed.
+> The tiles on Settings > MCP are generated from `Sources/MCPApps.swift`, one entry per app below. Claude Desktop with Claude Code, and the ChatGPT app with Codex, share one tile with a button for each (10 setups, 8 tiles), so no maker's logo shows twice. The unit checks in `main.swift` keep each copied text in the shape the app expects. Apps that could not be tried on a real install say so in the tile's note. Windsurf (Devin Desktop), Kimi and Qwen Code are researched here but have no tile: their config paths conflict between sources or the command was not confirmed. Zed, Cline, Warp and Trae are researched here too, but their tiles were taken out on 11 Nov 2026 at the owner's request, so their sections below are reference only.
 >
 > The tiles copy `/usr/bin/env python3 <path>` as the command, so the app finds python the same way a terminal does. The research below uses `python3` for the shortest form.
 > The brand pictures come from Simple Icons (CC0) via `scripts/art/make_app_logos.sh`; apps with no Simple Icons picture (ChatGPT, Doubao, VS Code) show the icon of the copy installed on the Mac, or letters on a colour. Brand rules are in section 3.
@@ -95,7 +95,7 @@ gemini mcp add -s user freeflow python3 /ABS/PATH/freeflow-mcp.py
 
 ### Doubao: split answer
 - **Doubao Work (豆包工作) desktop client: YES, STDIO supported, UI form only, no file, no CLI.** Official help page text (read from raw HTML): path is 插件·技能·伙伴 > 插件 > top right "+ 添加" > "新建自定义连接器", fields: 服务器名称, 传输类型 "支持 HTTP 或 STDIO ... STDIO 用于连接本地运行的程序", and for STDIO "需要填写程序的运行命令、参数和环境变量" (example: command `npx`, args `-y @notionhq/notion-mcp-server`, env vars).
-  - FreeFlow values: name `freeflow`, transport STDIO, command `python3`, args `/ABS/PATH/freeflow-mcp.py`, env empty.
+  - Purrscribe values: name `freeflow`, transport STDIO, command `python3`, args `/ABS/PATH/freeflow-mcp.py`, env empty.
   - The page does not state which OS builds have this. It talks about 本地电脑 / 云电脑. Page calls the entry "插件" (plugin) while the button says "自定义连接器".
   - Doc: https://www.doubao.com/work/docs/zh-cn/articles/705018132598-plugins
 - **Regular Doubao chat app (consumer app/web/phone): no official doc for adding custom or local MCP servers found. Treat as NOT supported. Do not show a tile.**
@@ -195,7 +195,7 @@ Checked by fetching `data/simple-icons.json` and probing `icons/<slug>.svg`. The
 | Brand | Slug | In set? |
 |---|---|---|
 | Claude (Desktop) | `claude` | yes |
-| Claude Code | `claudecode` | yes |
+| Claude Code | `claudecode` | yes, but not bundled: Claude Code shares the Claude tile, so the page shows one Claude picture |
 | Anthropic | `anthropic` | yes |
 | Cursor | `cursor` | yes |
 | OpenAI / ChatGPT / Codex | `openai` | NO. Removed 2025-11-29 (commit "Remove OpenAI (#13944)", prepared for v16.0.0 "assuming no permissions are sought/obtained"). No `chatgpt` or `codex` slug exists. Only `openaigym` remains. |
@@ -203,15 +203,15 @@ Checked by fetching `data/simple-icons.json` and probing `icons/<slug>.svg`. The
 | GitHub Copilot | `githubcopilot` | yes (entry carries an MIT licence field, source Primer, not plain CC0) |
 | VS Code | `visualstudiocode` | NO. Removed 2024-06-28 ("Remove Microsoft brands (#10019)"). |
 | Windsurf | `windsurf` | yes (entry points to windsurf.com/brand; product now renamed Devin Desktop; no `devin` slug) |
-| Zed | `zedindustries` | yes (`zed` does not exist) |
-| Cline | `cline` | yes |
-| Warp | `warp` | yes |
-| Trae | `trae` | yes |
+| Zed | `zedindustries` | yes (`zed` does not exist). No tile since 11 Nov 2026, so not bundled |
+| Cline | `cline` | yes. No tile, not bundled |
+| Warp | `warp` | yes. No tile, not bundled |
+| Trae | `trae` | yes. No tile, not bundled |
 | Doubao | none | NO. `bytedance` exists but is the company mark, not Doubao. |
 | Kimi | `kimi` (also `moonshotai`) | yes (entry links Moonshot's branding guide) |
 | Qwen | `qwen` | yes |
 | DeepSeek | `deepseek` | yes |
-| Hermes Agent (Nous) | none | NO. A `hermes` slug exists but it is the German parcel firm Hermes (source myhermes.de). Do not use it for Hermes Agent. |
+| Hermes Agent (Nous) | none | NO. A `hermes` slug exists but it is the German parcel firm Hermes (source myhermes.de). Do not use it for Hermes Agent. The tile uses the app icon from Nous Research's own repository instead (`assets/icon-master.svg`, MIT), bundled as `hermes.png` with its notice in `assets/brand/apps/NOTICE.txt`. |
 | MCP | `modelcontextprotocol` | yes |
 
 ## 5. Things to double check before shipping tiles
@@ -219,5 +219,6 @@ Checked by fetching `data/simple-icons.json` and probing `icons/<slug>.svg`. The
 2. Windsurf/Devin Desktop: three conflicting config paths; test or drop the tile.
 3. Doubao: only the Doubao Work client has STDIO; label the tile "Doubao Work" and do not claim the regular Doubao app.
 4. Cursor deeplink payload shape (bare server object vs wrapped).
-5. Claude Desktop, Zed and others: instruct "merge into existing file", never overwrite.
-6. Logo use: Anthropic needs prior approval; VS Code icon use is restricted; OpenAI and VS Code have no Simple Icons SVG, so those tiles cannot use that set.
+5. Claude Desktop and any app with one shared settings file: instruct "merge into existing file", never overwrite.
+6. Logo use: Anthropic needs prior approval; VS Code icon use is restricted; OpenAI and VS Code have no Simple Icons SVG, so those tiles cannot use that set. Hermes Agent: the Nous Research repository is MIT and its README and LICENSE state no brand rules (checked 11 Nov 2026; the Nous website was not checked), so its icon is bundled with the notice kept beside it. The MIT licence covers the file, not the name or the mark.
+7. Tiles (11 Nov 2026, at the owner's request): Claude Desktop and Claude Code share one "Claude" tile, and the ChatGPT app and Codex share one "ChatGPT" tile, each with a button per setup. This removed the two placeholder pictures (the Claude Code pixel mascot and the black ">_" Codex tile) and leaves one Claude picture. Hermes Agent has no Simple Icons picture and no installed app to borrow an icon from, so its tile uses the app icon from Nous Research's own repository (`assets/icon-master.svg`, MIT, as of commit c2b69de), bundled as `hermes.png`. `build.sh` copies the licence notice (`assets/brand/apps/NOTICE.txt`) into the app beside it, and `--test` checks that it is there. To drop the picture, remove `icon: "hermes"` from the Hermes entry in `Sources/MCPApps.swift`; the tile then falls back to letters. Zed, Cline, Warp and Trae lost their tiles the same day, at the owner's request: their entries, pictures and unit checks are removed and the research above stays as reference. Cline and Trae read a plain mcpServers list, so the Any other app tile covers them; Zed and Warp use their own shapes and would need a tile again.

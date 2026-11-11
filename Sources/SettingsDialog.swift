@@ -37,6 +37,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 /// The dialog: a dimmed window behind, a card with its own sidebar, one tab of settings at a time.
 struct SettingsDialog: View {
     @ObservedObject var model: StudioModel
+    /// How tall the card can be. Only the picture maker (`--render-ui`) raises it, to draw a whole tab without scrolling.
+    static var maxHeight: CGFloat = 600
 
     var body: some View {
         let tab = model.settingsTab ?? .general
@@ -51,7 +53,7 @@ struct SettingsDialog: View {
                     group("ACCOUNT", SettingsTab.accountTabs, tab)
                     Spacer(minLength: 0)
                     HStack(spacing: 8) {
-                        Text("FreeFlow v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
+                        Text("Purrscribe v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
                             .font(Fonts.sans(11.5, .semibold)).foregroundColor(RT.ink3)
                     }
                     .padding(.horizontal, 12).padding(.bottom, 4)
@@ -77,7 +79,7 @@ struct SettingsDialog: View {
                     .buttonStyle(.plain).padding(14).help("Close")
                 }
             }
-            .frame(maxWidth: 820, maxHeight: 600)
+            .frame(maxWidth: 820, maxHeight: Self.maxHeight)
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .shadow(color: Color.black.opacity(0.25), radius: 30, y: 12)
             .padding(28)
@@ -144,7 +146,14 @@ struct GeneralTab: View {
         let cmdOn = model.bind({ s.commandMode }, { s.commandMode = $0 }, then: model.bridge.commandModeChanged)
         let cmdKey = model.bind({ s.commandKey }, { s.commandKey = $0 }, then: model.bridge.hotkeysChanged)
         let look = model.bind({ s.appearance }, { s.appearance = $0 }, then: { AppearanceChoice.applySaved() })
+        let ways = model.bind({ s.colorway }, { s.colorway = $0 }, then: {
+            model.colourTick += 1
+            NotificationCenter.default.post(name: .freeflowLookChanged, object: nil)
+        })
         let cats = model.bind({ s.catTheme }, { s.catTheme = $0 }, then: { NotificationCenter.default.post(name: .freeflowLookChanged, object: nil) })
+        let runner = model.bind({ s.catRunner }, { s.catRunner = $0 }, then: { NotificationCenter.default.post(name: .freeflowLookChanged, object: nil) })
+        let roster = model.bind({ s.catRoster }, { s.catRoster = $0 })
+        let catSize = model.bind({ s.catSize }, { s.catSize = $0 }, then: { NotificationCenter.default.post(name: .freeflowLookChanged, object: nil) })
 
         SettingsCard(title: "Shortcuts") {
             SettingRow(title: "Talk key", note: s.talkKey == .fn ? "Tip: if Fn switches your language or opens emoji, set Keyboard settings › Press 🌐 key to › Do Nothing." : s.talkKey == .leftControl ? "Any other key pressed while Control is down cancels, so shortcuts like Ctrl+C are safe. Holding it while you click or drag starts a dictation." : nil) {
@@ -159,7 +168,7 @@ struct GeneralTab: View {
             }
             Toggle(isOn: unsentPop) { RowLabel(title: "Pop-up when words can't be typed", note: "If a dictation does not reach a text box, a card shows the words with a Copy button. They are always in your history too.") }
                 .toggleStyle(RhythmeToggleStyle())
-            Toggle(isOn: cmdOn) { RowLabel(title: "Edit by voice", note: model.aiOK ? "Select text, hold the command key and say \u{201C}make this shorter\u{201D}." : "Needs Ollama running. Start it and this turns on.") }
+            Toggle(isOn: cmdOn) { RowLabel(title: "Edit by voice", note: model.aiOK ? "Select text, hold the command key and say \u{201C}make this shorter\u{201D}." : "Needs the local AI. Set it up in Help and this turns on.") }
                 .toggleStyle(RhythmeToggleStyle())
             if s.commandMode {
                 SettingRow(title: "Command key", note: nil) {
@@ -170,16 +179,30 @@ struct GeneralTab: View {
 
         SettingsCard(title: "Microphone") {
             PermissionRow(title: "Microphone", ok: model.micOK, action: model.bridge.allowMic)
-            Text("FreeFlow listens to the input your Mac is using. Change it in System Settings › Sound › Input.")
+            Text("Purrscribe listens to the input your Mac is using. Change it in System Settings › Sound › Input.")
                 .font(Fonts.sans(12.5, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
         }
 
         SettingsCard(title: "Appearance") {
-            SettingRow(title: "Look", note: "Cute cats puts Rhea and her cats in the pictures and gives the little face cat ears.") {
+            SettingRow(title: "Look", note: "Cute cats puts the cat pictures in the window and gives the little face cat ears.") {
                 ChipPicker(options: [(true, "Cute cats"), (false, "Pearly bubble")], selection: cats)
             }
-            SettingRow(title: "Colours", note: "Dark purple is the Rhythme night room. Match my Mac follows light and dark by itself.") {
+            SettingRow(title: "Colours", note: "Dreamy is lavender and plum, with Rhea. Sunset is cream, butter and apricot, with warm-toned cats.") {
+                ChipPicker(options: Colorway.allCases.map { ($0, $0.chipTitle) }, selection: ways)
+            }
+            SettingRow(title: "Light or dark", note: "Dark is the night room in either colours. Match my Mac follows light and dark by itself.") {
                 ChipPicker(options: AppearanceChoice.allCases.map { ($0, $0.chipTitle) }, selection: look)
+            }
+            Toggle(isOn: runner) { RowLabel(title: "Cats on top of the window", note: "The cats live on the top edge of the window: one plays while the others laze about. The toy box in the sidebar has a ball, a wand and fish biscuits: click one and it bounces up to the cats, click it again to put it back. Tap a pile to clean it up. Needs the Cute cats look and some room above the window, and stays away when Reduce motion is on in macOS.") }
+                .toggleStyle(RhythmeToggleStyle())
+            if s.catRunner {
+                SettingRow(title: "Cat size", note: "How big the cats and their toys are drawn. Medium is the size they have always been.") {
+                    ChipPicker(options: CatSize.allCases.map { ($0, $0.title) }, selection: catSize)
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    RowLabel(title: "Your cats", note: "Up to three live on the window at a time. Tap a cat to bring it in or send it away.")
+                    CatChooser(selection: roster)
+                }
             }
         }
 
@@ -233,9 +256,9 @@ struct SystemTab: View {
 
         SettingsCard(title: "App settings") {
             Toggle(isOn: login) { RowLabel(title: "Launch app at login", note: nil) }.toggleStyle(RhythmeToggleStyle())
-            Toggle(isOn: dock) { RowLabel(title: "Show FreeFlow in the Dock", note: "FreeFlow lives in the menu bar at the top of the screen (the little face). Turn this on to also keep a Dock icon that opens its window.") }
+            Toggle(isOn: dock) { RowLabel(title: "Show Purrscribe in the Dock", note: "Purrscribe lives in the menu bar at the top of the screen (the little face). Turn this on to also keep a Dock icon that opens its window.") }
                 .toggleStyle(RhythmeToggleStyle())
-            Toggle(isOn: idle) { RowLabel(title: "Show the bar at all times", note: "A tiny sleepy face at the bottom of the screen when FreeFlow is idle.") }
+            Toggle(isOn: idle) { RowLabel(title: "Show the bar at all times", note: "A tiny sleepy face at the bottom of the screen when Purrscribe is idle.") }
                 .toggleStyle(RhythmeToggleStyle())
         }
         SettingsCard(title: "Sound") {
@@ -299,7 +322,7 @@ struct NotetakerTab: View {
 
     private var modeNote: String {
         switch s.meetingMode {
-        case .off: return "FreeFlow will not look for calls. You can still start notes by hand."
+        case .off: return "Purrscribe will not look for calls. You can still start notes by hand."
         case .ask: return "A small card appears in the corner when a call starts. Tap Take notes, or ignore it."
         case .auto: return "A card appears for \(s.meetingCountdown) seconds, then notes start by themselves. Tap Not now to skip that call."
         }
@@ -313,15 +336,15 @@ struct MCPTab: View {
     @State private var picked: String?
     @State private var copiedID: String?
 
-    private let columns = [GridItem(.adaptive(minimum: 128, maximum: 170), spacing: 12)]
+    private let columns = [GridItem(.adaptive(minimum: 136, maximum: 170), spacing: 12)]
 
     var body: some View {
-        Text("Let your favourite AI app search what you have said. The FreeFlow MCP runs on this Mac and only reads your dictation history. Pick your app and the right thing is copied for it.")
+        Text("Let your favourite AI app search what you have said. The Purrscribe MCP runs on this Mac and only reads your dictation history. Pick your app and the right thing is copied for it.")
             .font(Fonts.sans(14, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
         SettingsCard(title: "Works with") {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
-                ForEach(MCPApps.all) { app in
-                    MCPAppTile(app: app, copied: copiedID == app.id, picked: picked == app.id) { copy(app) }
+                ForEach(MCPApps.tiles) { tile in
+                    MCPAppTile(tile: tile, copiedID: copiedID, pickedID: picked) { copy($0) }
                 }
             }
             if let app = picked.flatMap(MCPApps.app) {
@@ -334,7 +357,7 @@ struct MCPTab: View {
                 .background(RoundedRectangle(cornerRadius: RT.radiusSmall, style: .continuous).fill(RT.lilac2.opacity(0.6)))
             }
         }
-        Text("Names and logos belong to their makers and are shown only to say FreeFlow works with them. Apps that are installed here show their own icon.")
+        Text("Names and logos belong to their makers and are shown only to say Purrscribe works with them. Apps that are installed here show their own icon.")
             .font(Fonts.sans(11.5, .medium)).foregroundColor(RT.ink3).fixedSize(horizontal: false, vertical: true)
     }
 
@@ -348,39 +371,78 @@ struct MCPTab: View {
     }
 }
 
-/// One app on the MCP page: its logo, its name, and what a click copies.
+/// One tile on the MCP page: the logo, the name and what a click copies. A tile that holds two setups from one maker
+/// (Claude: Desktop and Code) has one small button for each, so the same logo is never shown twice.
 struct MCPAppTile: View {
-    let app: MCPApp
-    let copied: Bool
-    let picked: Bool
-    let action: () -> Void
+    let tile: MCPApps.Tile
+    let copiedID: String?
+    let pickedID: String?
+    let copy: (MCPApp) -> Void
     @State private var hover = false
 
+    private var lead: MCPApp { tile.apps[0] }
+    private var picked: Bool { tile.apps.contains { $0.id == pickedID } }
+
     var body: some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                MCPLogo(app: app).frame(width: 46, height: 46)
-                Text(app.name).font(Fonts.sans(13, .bold)).foregroundColor(RT.ink).lineLimit(1)
-                Text(copied ? "Copied" : app.kind.button)
-                    .font(Fonts.sans(11, .semibold)).foregroundColor(copied ? RT.ok : RT.ink3)
+        if tile.apps.count == 1 {
+            Button { copy(lead) } label: { face }
+                .buttonStyle(.plain)
+                .onHover { hover = $0 }
+                .help(Self.help(lead))
+        } else {
+            face
+        }
+    }
+
+    private var face: some View {
+        VStack(spacing: 8) {
+            MCPLogo(app: lead).frame(width: 46, height: 46)
+            Text(tile.name).font(Fonts.sans(13, .bold)).foregroundColor(RT.ink).lineLimit(1)
+            if tile.apps.count == 1 {
+                Text(copiedID == lead.id ? "Copied" : lead.kind.button)
+                    .font(Fonts.sans(11, .semibold)).foregroundColor(copiedID == lead.id ? RT.ok : RT.ink3)
+                    .frame(height: 22)
+            } else {
+                HStack(spacing: 6) { ForEach(tile.apps) { pill($0) } }
             }
-            .padding(.vertical, 12).padding(.horizontal, 8)
-            .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: RT.radiusSmall, style: .continuous).fill(hover || picked ? RT.lilac2.opacity(0.7) : RT.paper2.opacity(0.5)))
-            .overlay(RoundedRectangle(cornerRadius: RT.radiusSmall, style: .continuous).stroke(picked ? RT.mauve.opacity(0.6) : RT.line2, lineWidth: picked ? 1.5 : 1))
+        }
+        .padding(.vertical, 12).padding(.horizontal, 8)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: RT.radiusSmall, style: .continuous).fill(hover || picked ? RT.lilac2.opacity(0.7) : RT.paper2.opacity(0.5)))
+        .overlay(RoundedRectangle(cornerRadius: RT.radiusSmall, style: .continuous).stroke(picked ? RT.mauve.opacity(0.6) : RT.line2, lineWidth: picked ? 1.5 : 1))
+    }
+
+    /// One of the two buttons on a shared tile.
+    private func pill(_ app: MCPApp) -> some View {
+        let copied = copiedID == app.id
+        let on = pickedID == app.id
+        return Button { copy(app) } label: {
+            Text(copied ? "Copied" : (app.label ?? app.name))
+                .font(Fonts.sans(11, .bold)).foregroundColor(copied ? RT.ok : RT.mauve).lineLimit(1)
+                .padding(.horizontal, 8).frame(minWidth: 46, minHeight: 22)
+                // Circular ends on purpose: Capsule() defaults to the continuous style, whose ends have a flat middle that reads as small ticks.
+                .background(Capsule(style: .circular).fill(RT.lilac2.opacity(on ? 0.95 : 0.55)))
+                .overlay(Capsule(style: .circular).strokeBorder(on ? RT.mauve.opacity(0.6) : RT.line2, lineWidth: on ? 1.5 : 1))
         }
         .buttonStyle(.plain)
-        .onHover { hover = $0 }
-        .help(app.kind == .command ? "Copies a command to paste in a terminal" : app.kind == .config ? "Copies a config entry to paste into \(app.name)'s settings" : "Copies the fields to fill in \(app.name)")
+        .help(Self.help(app))
+    }
+
+    private static func help(_ app: MCPApp) -> String {
+        app.kind == .command ? "Copies a command to paste in a terminal" : app.kind == .config ? "Copies a config entry to paste into \(app.name)'s settings" : "Copies the fields to fill in \(app.name)"
     }
 }
 
-/// The picture for an app: its bundled brand picture on a white tile, else the installed app's own icon, else letters on a colour.
+/// The picture for an app: a bundled app icon as it is, else its bundled brand picture on a white tile, else the installed app's own icon, else letters on a colour.
 struct MCPLogo: View {
     let app: MCPApp
 
     var body: some View {
-        if let name = app.glyph, let img = Art.appLogo(name) {
+        if let name = app.icon, let img = Art.appLogo(name) {
+            Image(nsImage: img).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(Color.black.opacity(0.08), lineWidth: 1))
+        } else if let name = app.glyph, let img = Art.appLogo(name) {
             ZStack {
                 RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color.white)
                 Image(nsImage: img).resizable().interpolation(.high).aspectRatio(contentMode: .fit).padding(10)
@@ -410,8 +472,43 @@ struct AccountTab: View {
             SettingRow(title: "First name", note: "Used for the greeting and in the team list.") { SoftField(placeholder: "First name", text: first) }
             SettingRow(title: "Last name", note: nil) { SoftField(placeholder: "Last name", text: last) }
         }
-        Text("FreeFlow has no sign-in and no account. Everything you say and write stays on this Mac.")
+        .onAppear { model.lookForLocalAI() }
+        SettingsCard(title: "Ways to get Purrscribe") {
+            planRow("Free, on your Mac", badge: "What you have",
+                    text: "Your own speech and rewrite models run here. No account, no limit, and what you say and write is not uploaded.") {
+                Button(model.aiStatus.isReady ? "Local AI is ready" : "Set up the local AI") { model.page = .localModel; model.settingsTab = nil }
+                    .buttonStyle(GhostButton()).disabled(model.aiStatus.isReady)
+            }
+            SoftDivider()
+            planRow("Cloud, monthly", badge: Plans.checkoutURL == nil ? "Coming soon" : nil,
+                    text: "For people who would rather not run models on their own Mac. We run them for you for a monthly price. Unlike the free plan, what you dictate is processed on our servers.") {
+                if let url = Plans.checkoutURL {
+                    Button("Subscribe") { NSWorkspace.shared.open(url) }.buttonStyle(PrimaryButton(small: true))
+                }
+            }
+            SoftDivider()
+            planRow("Build it yourself", badge: nil,
+                    text: "The source is on GitHub. One script builds the app and another sets up the models. You need Xcode's command line tools and Homebrew.") {
+                Button("Open the source on GitHub") { NSWorkspace.shared.open(Plans.sourceURL) }.buttonStyle(GhostButton())
+            }
+        }
+        Text("The free plan has no sign-in and no account. Everything you say and write stays on this Mac.")
             .font(Fonts.sans(12.5, .medium)).foregroundColor(RT.ink3).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func planRow<A: View>(_ title: String, badge: String?, text: String, @ViewBuilder action: () -> A) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Text(title).font(Fonts.sans(14.5, .heavy)).foregroundColor(RT.ink)
+                if let badge = badge {
+                    Text(badge).font(Fonts.sans(11.5, .bold)).foregroundColor(RT.plum)
+                        .padding(.horizontal, 9).padding(.vertical, 3).background(Capsule().fill(RT.lilac2))
+                }
+                Spacer(minLength: 0)
+            }
+            Text(text).font(Fonts.sans(12.5, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
+            action()
+        }
     }
 }
 
@@ -476,16 +573,16 @@ struct TeamTab: View {
                 }
             }
         } else {
-            EmptyNote(text: "Pick a shared folder to start. FreeFlow adds three small text files there that everyone can edit.", art: "snippets")
+            EmptyNote(text: "Pick a shared folder to start. Purrscribe adds three small text files there that everyone can edit.", art: "snippets")
         }
     }
 
     private var inviteText: String {
         let folder = s.teamFolderURL.map { $0.path.replacingOccurrences(of: Paths.home.path, with: "~") } ?? "our shared folder"
         return """
-        Join our FreeFlow team dictionary:
-        1. Install FreeFlow on your Mac.
-        2. Open FreeFlow, go to Settings › Team, and choose this folder: \(folder)
+        Join our Purrscribe team dictionary:
+        1. Install Purrscribe on your Mac.
+        2. Open Purrscribe, go to Settings › Team, and choose this folder: \(folder)
         3. Our shared words, snippets and styles now apply to your dictation too.
         Everything stays in the folder. There is no account and no server.
         """
@@ -509,7 +606,7 @@ struct PrivacyTab: View {
         Text("Nothing you say is sent online. Speech is turned into words on this Mac, and so is the tidy-up.")
             .font(Fonts.sans(14, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
 
-        SettingsCard(title: "What FreeFlow keeps") {
+        SettingsCard(title: "What Purrscribe keeps") {
             Toggle(isOn: keep) { RowLabel(title: "Keep my recordings on this Mac", note: "Lets you compare speech engines on your own voice. Off by default; the audio is otherwise deleted right after it is written down.") }
                 .toggleStyle(RhythmeToggleStyle())
             if s.keepTakes {
@@ -519,7 +616,7 @@ struct PrivacyTab: View {
                 SettingRow(title: "How long to keep them", note: "Recordings older than this are deleted, whatever the count.") {
                     ChipPicker(options: Settings.takesDaysChoices.map { ($0, $0 == 0 ? "Forever" : "\($0) days") }, selection: takesDays)
                 }
-                SettingRow(title: "Where they are saved", note: s.takesFolderPath.isEmpty ? "FreeFlow's own folder (Application Support › FreeFlow › takes)." : s.takesFolderPath) {
+                SettingRow(title: "Where they are saved", note: s.takesFolderPath.isEmpty ? "Purrscribe's own folder (Application Support › FreeFlow › takes)." : s.takesFolderPath) {
                     HStack(spacing: 8) {
                         Button("Choose folder…") {
                             let panel = NSOpenPanel()
@@ -537,7 +634,7 @@ struct PrivacyTab: View {
                     Button("Delete recordings") { model.bridge.deleteTakes() }.buttonStyle(GhostButton(danger: true))
                 }
             }
-            Toggle(isOn: learn) { RowLabel(title: "Learn from my corrections", note: "After FreeFlow types, it reads that one text box for a few minutes (never password fields) to see which words you fixed. Only the word pairs are kept.") }
+            Toggle(isOn: learn) { RowLabel(title: "Learn from my corrections", note: "After Purrscribe types, it reads that one text box for a few minutes (never password fields) to see which words you fixed. Only the word pairs are kept.") }
                 .toggleStyle(RhythmeToggleStyle())
             Toggle(isOn: typingLearn) { RowLabel(title: "Learn from my own typing", note: "When you backspace a wrongly typed name and write it again, it remembers the spelling. No keystrokes are recorded, nothing in password fields, password managers or terminals. Off by default.") }
                 .toggleStyle(RhythmeToggleStyle())

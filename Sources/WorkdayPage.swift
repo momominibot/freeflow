@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Workday: switch the notes on, see where the time goes, and get ideas FreeFlow can set up for you.
+/// Workday: switch the notes on, see where the time goes, and get ideas Purrscribe can set up for you.
 struct WorkdayPage: View {
     @ObservedObject var model: StudioModel
     @State private var cues: [String: String] = [:]
@@ -17,7 +17,7 @@ struct WorkdayPage: View {
         let on = model.bind({ model.settings.workdayOn }, { model.settings.workdayOn = $0 }, then: model.bridge.workdayChanged)
         PageScroll {
             PageTitle(title: "Workday",
-                      subtitle: "FreeFlow can keep a private log of which app and window you are in, then point out routines worth automating. By itself it keeps no screenshots and no text from your screen. The deeper notes below add that, only if you switch them on. Nothing leaves this Mac unless you press a button, and it forgets after 14 days (7 for the deeper notes).")
+                      subtitle: "Purrscribe can keep a private log of which app and window you are in, then point out routines worth automating. By itself it keeps no screenshots and no text from your screen. The deeper notes below add that, only if you switch them on. Nothing leaves this Mac unless you press a button, and it forgets after 14 days (7 for the deeper notes).")
 
             VStack(alignment: .leading, spacing: 14) {
                 Toggle(isOn: on) {
@@ -87,11 +87,11 @@ struct WorkdayPage: View {
                 .font(Fonts.sans(12.5, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
             Toggle(isOn: screen) {
                 RowLabel(title: "Read the text on my screen",
-                         note: "About every \(Int(model.settings.detailInterval / 60)) minutes while you work, FreeFlow reads the words on the front window on this Mac and keeps the words. The picture is thrown away at once. Needs Screen Recording to be allowed for FreeFlow.")
+                         note: "About every \(Int(model.settings.detailInterval / 60)) minutes while you work, Purrscribe reads the words on the front window on this Mac and keeps the words. The picture is thrown away at once. Needs Screen Recording to be allowed for Purrscribe.")
             }
             .toggleStyle(RhythmeToggleStyle())
             if model.settings.screenTextOn && !model.screenAllowed {
-                Text("Screen Recording is not allowed for FreeFlow yet, so nothing is read. Allow it in System Settings > Privacy & Security > Screen & System Audio Recording.")
+                Text("Screen Recording is not allowed for Purrscribe yet, so nothing is read. Allow it in System Settings > Privacy & Security > Screen & System Audio Recording.")
                     .font(Fonts.sans(12.5, .semibold)).foregroundColor(RT.warn).fixedSize(horizontal: false, vertical: true)
             }
             Toggle(isOn: typing) {

@@ -60,7 +60,7 @@ struct MeetingPromptView: View {
 }
 
 final class PromptPanel: NSPanel {
-    // Clickable, yet it never makes FreeFlow the active app, so the call keeps your keyboard.
+    // Clickable, yet it never makes Purrscribe the active app, so the call keeps your keyboard.
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
@@ -159,7 +159,7 @@ struct MeetingsPage: View {
     var body: some View {
         PageScroll {
             PageTitle(title: "Meetings",
-                      subtitle: "FreeFlow writes down your calls and your audio files. It listens on this Mac, keeps the words, and deletes the audio as soon as it is written. Tell the others you are taking notes.")
+                      subtitle: "Purrscribe writes down your calls and your audio files. It listens on this Mac, keeps the words, and deletes the audio as soon as it is written. Tell the others you are taking notes.")
             nowCard
             FileCard(model: model)
             // The call settings live in Settings > Notetaker. Here is only what they are now, and a way to them.
@@ -202,7 +202,7 @@ struct MeetingsPage: View {
 
     private var modeNote: String {
         switch model.settings.meetingMode {
-        case .off: return "FreeFlow will not look for calls. You can still start notes by hand."
+        case .off: return "Purrscribe will not look for calls. You can still start notes by hand."
         case .ask: return "A small card appears in the corner when a call starts. Tap Take notes, or ignore it."
         case .auto: return "A card appears for \(model.settings.meetingCountdown) seconds, then notes start by themselves. Tap Not now to skip that call, or point at the card to pause the countdown."
         }

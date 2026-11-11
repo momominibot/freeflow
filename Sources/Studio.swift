@@ -167,8 +167,10 @@ enum ListFile {
 // MARK: - The model behind the window
 
 final class StudioModel: ObservableObject {
+    /// True while the cats are on the strip above the window (CatPerch.swift); then the top bar inside the window has no cats.
+    @Published var catPerched = false
     enum Page: String, CaseIterable, Identifiable {
-        case home, polish, meetings, insights, dictionary, snippets, modes, transforms, scratchpad, workday, learning, help
+        case home, polish, meetings, insights, dictionary, snippets, modes, transforms, scratchpad, workday, learning, help, localModel
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -184,6 +186,7 @@ final class StudioModel: ObservableObject {
             case .workday: return "Workday"
             case .learning: return "Learning"
             case .help: return "Help"
+            case .localModel: return "Set up the local AI"
             }
         }
         var icon: String {
@@ -200,6 +203,7 @@ final class StudioModel: ObservableObject {
             case .workday: return "calendar.badge.clock"
             case .learning: return "sparkles"
             case .help: return "questionmark.circle"
+            case .localModel: return "cpu"
             }
         }
     }
@@ -228,6 +232,13 @@ final class StudioModel: ObservableObject {
     @Published var axOK = false
     @Published var loginOK = false
     @Published var aiOK = false
+    /// Where the Mac is on the way to the free rewrite model, from the last look at Ollama (LocalModel.swift). Home, Help and the Local AI page read it.
+    @Published var aiStatus: LocalModel.Status = .checking
+    @Published var aiModels: [String] = []
+    @Published var aiChecking = false
+    /// The pictures from `--render-ui` draw a chosen state, so they never look at the machine.
+    var aiFrozen = false
+    private var aiInFlight = false
     @Published var installing = false
     @Published var notes: [MeetingNote] = []
     @Published var modesFile = ModesFile()
@@ -243,6 +254,8 @@ final class StudioModel: ObservableObject {
     @Published var summarizing: Set<String> = []
     @Published var scratch: [ScratchNote] = []
     @Published var settingsTab: SettingsTab?
+    /// Bumped when the colourway changes: the whole window is rebuilt with it, so every colour is read again.
+    @Published var colourTick = 0
     @Published var sidebarHidden = false
     @Published var daily: [(day: Date, words: Int)] = []
 
@@ -288,6 +301,21 @@ final class StudioModel: ObservableObject {
     }
 
     func openSettings(_ tab: SettingsTab = .general) { settingsTab = tab }
+
+    /// One look at Ollama in the background. `manual` shows "Checking…" on the page's button while it runs.
+    func lookForLocalAI(manual: Bool = false) {
+        if aiFrozen || aiInFlight { return }
+        aiInFlight = true
+        if manual { aiChecking = true }
+        LocalModel.check(wanted: settings.aiModel) { [weak self] st, found in
+            guard let self = self else { return }
+            self.aiStatus = st
+            self.aiModels = found
+            self.aiOK = st.isReady
+            self.aiChecking = false
+            self.aiInFlight = false
+        }
+    }
 
     /// The short list in the sidebar that walks through setting up meeting notes.
     var setupSteps: [SetupStep] {
@@ -338,6 +366,7 @@ struct StudioView: View {
                         case .workday: WorkdayPage(model: model)
                         case .learning: LearningPage(model: model)
                         case .help: HelpPage(model: model)
+                        case .localModel: LocalModelPage(model: model)
                         }
                     }
                     .id(model.page)
@@ -362,7 +391,7 @@ struct StudioView: View {
                     Image(systemName: scheme == .dark ? "sun.max" : "moon").font(.system(size: 15, weight: .regular)).foregroundColor(RT.ink2)
                         .frame(width: 30, height: 28).contentShape(Rectangle())
                 }
-                .buttonStyle(.plain).help(scheme == .dark ? "Light colours" : "Dark purple")
+                .buttonStyle(.plain).help(scheme == .dark ? "Light colours" : (Colorway.current == .sunset ? "Dark brown" : "Dark purple"))
                 Button { model.openSettings(.account) } label: {
                     Image(systemName: "person.crop.circle").font(.system(size: 17, weight: .regular)).foregroundColor(RT.ink2)
                         .frame(width: 30, height: 28).contentShape(Rectangle())
@@ -371,6 +400,9 @@ struct StudioView: View {
                 .padding(.trailing, 18)
             }
             .padding(.top, 10)
+
+            // The cats live only on the strip above the window (CatPerch.swift), never inside it (the owner, 10 Nov 2026). The window keeps
+            // room above itself for them: see StudioWindow.
 
             if model.settingsTab != nil {
                 SettingsDialog(model: model).transition(.opacity).zIndex(2)
@@ -382,6 +414,7 @@ struct StudioView: View {
         .animation(.easeInOut(duration: 0.18), value: model.settingsTab)
         .animation(.easeInOut(duration: 0.2), value: model.sidebarHidden)
         .onReceive(tick) { _ in model.reload() }
+        .id(model.colourTick)
     }
 }
 
@@ -393,9 +426,9 @@ struct Sidebar: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Emblem(size: 36)
-                Text("FreeFlow").font(Fonts.serif(23)).foregroundColor(RT.plum)
+                Wordmark(size: 27)
             }
-            .padding(.top, 44).padding(.horizontal, 22).padding(.bottom, 10)
+            .padding(.top, 38).padding(.horizontal, 22).padding(.bottom, 8)
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 2) {
@@ -414,6 +447,11 @@ struct Sidebar: View {
             }
             .padding(.horizontal, 12).padding(.top, 8)
 
+            // the cats' toy box: tidy, in the app; click a toy and it bounces up to the cats on the window's top edge (CatPerch.swift)
+            if model.settings.catTheme && model.settings.catRunner {
+                CatToyBox(stripInset: model.catPerched ? CatPerch.sideInset : 0).padding(.horizontal, 26).padding(.top, 10)
+            }
+
             HStack(spacing: 8) {
                 Circle().fill(model.statusOK ? RT.ok : RT.warn).frame(width: 8, height: 8)
                 Text(model.statusOK ? "Ready · \(Settings.shared.engine.short)" : model.statusText)
@@ -426,7 +464,9 @@ struct Sidebar: View {
     }
 
     private func navItem(_ p: StudioModel.Page) -> some View {
-        rowButton(p.title, p.icon, on: model.page == p && model.settingsTab == nil) { model.settingsTab = nil; model.page = p }
+        // The Local AI page is reached from Help, so Help stays lit while it is open.
+        let lit = model.page == p || (p == .help && model.page == .localModel)
+        return rowButton(p.title, p.icon, on: lit && model.settingsTab == nil) { model.settingsTab = nil; model.page = p }
     }
 
     private func utilityItem(_ title: String, _ icon: String, on: Bool, action: @escaping () -> Void) -> some View {
@@ -617,7 +657,7 @@ struct LearningPage: View {
         let on = model.bind({ model.settings.learnFromFixes }, { model.settings.learnFromFixes = $0 })
         let typing = model.bind({ model.settings.learnFromTyping }, { model.settings.learnFromTyping = $0 }, then: model.bridge.typingChanged)
         PageScroll {
-            PageTitle(title: "Learning", subtitle: "Fix a word in the text FreeFlow typed and it remembers. The more you use it, the more it sounds like you.")
+            PageTitle(title: "Learning", subtitle: "Fix a word in the text Purrscribe typed and it remembers. The more you use it, the more it sounds like you.")
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Is it getting better?").font(Fonts.serif(20)).foregroundColor(RT.plum)
@@ -633,7 +673,7 @@ struct LearningPage: View {
                 }
                 Text(LearningStats.verdict(this: model.learningWeeks.this, last: model.learningWeeks.last))
                     .font(Fonts.sans(13, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
-                Text("A fix is a word you corrected after FreeFlow typed it. Fewer per 100 words, over weeks, means it is getting more accurate for you. This is the vocabulary it learns (spellings and swaps), not a retrained voice model.")
+                Text("A fix is a word you corrected after Purrscribe typed it. Fewer per 100 words, over weeks, means it is getting more accurate for you. This is the vocabulary it learns (spellings and swaps), not a retrained voice model.")
                     .font(Fonts.sans(12, .medium)).foregroundColor(RT.ink3).fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -643,7 +683,7 @@ struct LearningPage: View {
                 Toggle(isOn: typing) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Learn from my own typing").font(Fonts.sans(15, .heavy)).foregroundColor(RT.ink)
-                        Text("When you type a name wrongly, backspace and write it again, FreeFlow remembers the spelling, so it hears it right next time: the first time when it is plainly a spelling fix (a few letters off), after the second time otherwise. It does not record keystrokes: it looks at the line you are typing on every half second and keeps only that word. Never in password fields, password managers or terminals. Off until you switch it on.")
+                        Text("When you type a name wrongly, backspace and write it again, Purrscribe remembers the spelling, so it hears it right next time: the first time when it is plainly a spelling fix (a few letters off), after the second time otherwise. It does not record keystrokes: it looks at the line you are typing on every half second and keeps only that word. Never in password fields, password managers or terminals. Off until you switch it on.")
                             .font(Fonts.sans(12.5, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -854,12 +894,35 @@ extension CleanupLevel {
 
 // MARK: - The window itself
 
+/// The Studio window. While the cats are on, its top edge stays `CatPerch.want` points below the top of the screen's usable area, so the
+/// cats always have their strip above the window, outside the app: a window dragged higher settles back down, a saved place that is too
+/// high is moved down, and one too tall for the rest of the screen gets shorter (never below its smallest size).
+final class StudioWindow: NSWindow {
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        var f = super.constrainFrameRect(frameRect, to: screen)
+        let s = Settings.shared
+        guard s.catTheme, s.catRunner, !styleMask.contains(.fullScreen), let vf = (screen ?? self.screen ?? NSScreen.main)?.visibleFrame else { return f }
+        let top = vf.maxY - CatPerch.want
+        guard f.maxY > top else { return f }
+        if f.height > top - vf.minY { f.size.height = max(minSize.height, top - vf.minY) }
+        f.origin.y = top - f.height
+        return f
+    }
+}
+
 final class StudioWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
+    private var perch: CatPerch?
     let model: StudioModel
 
     init(bridge: AppBridge) {
         model = StudioModel(bridge: bridge)
+        super.init()
+        NotificationCenter.default.addObserver(forName: .freeflowLookChanged, object: nil, queue: .main) { [weak self] _ in
+            guard let w = self?.window else { return }
+            w.backgroundColor = RT.windowBackground
+            w.setFrame(w.constrainFrameRect(w.frame, to: w.screen), display: true)            // the cats were just turned on: make room
+        }
     }
 
     var isOpen: Bool { window?.isVisible == true }
@@ -868,7 +931,7 @@ final class StudioWindowController: NSObject, NSWindowDelegate {
         if let p = page { model.page = p }
         model.reload()
         if window == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 740),
+            let w = StudioWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 740),
                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                              backing: .buffered, defer: false)
             w.titlebarAppearsTransparent = true
@@ -888,12 +951,17 @@ final class StudioWindowController: NSObject, NSWindowDelegate {
                 f.size.height = 740
                 w.setFrame(f, display: false)
             }
+            w.setFrame(w.constrainFrameRect(w.frame, to: w.screen), display: false)   // an older saved place may leave the cats no room
             window = w
+            let perch = CatPerch(window: w)
+            perch.onPerched = { [weak self] on in if self?.model.catPerched != on { self?.model.catPerched = on } }
+            self.perch = perch
         }
         // A menu-bar app has no Dock icon. While this window is open it gets one, so ⌘Tab, ⌘C and ⌘V work as usual.
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+        perch?.layout()
     }
 
     /// First time only: open on the screen you are looking at (where the pointer is), not always the main one.
@@ -901,10 +969,18 @@ final class StudioWindowController: NSObject, NSWindowDelegate {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
         guard let vf = screen?.visibleFrame else { return w.center() }
-        w.setFrameOrigin(NSPoint(x: vf.midX - w.frame.width / 2, y: vf.midY - w.frame.height / 2))
+        // Lower than the middle, so the cats have room to sit on the top edge (CatPerch.swift).
+        let free = max(0, vf.height - w.frame.height)
+        w.setFrameOrigin(NSPoint(x: vf.midX - w.frame.width / 2, y: vf.minY + free * 0.2))
+    }
+
+    /// The green button fills the screen but leaves the cats their strip above the window.
+    func windowWillUseStandardFrame(_ window: NSWindow, defaultFrame newFrame: NSRect) -> NSRect {
+        window.constrainFrameRect(newFrame, to: window.screen)
     }
 
     func windowWillClose(_ notification: Notification) {
+        perch?.hide()
         // Back to the menu bar only, unless the Dock icon was asked for.
         NSApp.setActivationPolicy(Settings.shared.showInDock ? .regular : .accessory)
     }
@@ -922,6 +998,8 @@ enum UIShots {
 
     /// Draws every page and every state of the floating bar to PNG files in `dir`, light, and again in dark royal purple in `dir/dark`.
     static func render(to dir: URL) {
+        // FF_SHOT_COLOURWAY=sunset draws the Sunset colours without changing the saved choice.
+        if let way = ProcessInfo.processInfo.environment["FF_SHOT_COLOURWAY"], let c = Colorway(rawValue: way) { Colorway.current = c }
         shotAppearance = NSAppearance(named: .aqua)
         renderSet(to: dir)
         shotAppearance = NSAppearance(named: .darkAqua)
@@ -935,21 +1013,50 @@ enum UIShots {
         bridge.status = { ("Whisper · offline, no word limit", true) }
         bridge.aiReady = { true }
         let model = StudioModel(bridge: bridge)
+        model.aiFrozen = true                                       // draw the states below, never look at this Mac's Ollama
+        model.aiStatus = .ready(LocalModel.recommended)
+        model.aiModels = [LocalModel.recommended, "llama3.2:3b"]
         PolishModel.renderSample = "i think we should of sent the the invoice to the client yesterday. Its a very good chance that they will recieve it in order to review it before friday, but i am not sure."
         for page in StudioModel.Page.allCases {
             model.page = page
             // The Meetings page is long; draw it tall so the notes show.
-            let tall: [StudioModel.Page: CGFloat] = [.meetings: 1500, .insights: 1000, .help: 1000, .scratchpad: 800, .polish: 1700]
+            let tall: [StudioModel.Page: CGFloat] = [.meetings: 1500, .insights: 1000, .help: 1300, .scratchpad: 800, .polish: 1700, .localModel: 1500]
             let size = NSSize(width: shotWidth, height: tall[page] ?? 740)
             png(NSHostingView(rootView: StudioView(model: model)), size: size, to: dir.appendingPathComponent("page-\(page.rawValue).png"))
         }
 
         model.page = .home
+        // General runs long (the cat size sits in Appearance), Account carries the plans and MCP has eight tiles in three rows, so those three are drawn tall.
+        // The card is normally 600 high and scrolls, so a tall window alone would still clip it: raise its height to the window's (less the 28 of margin each side).
+        let tallTab: [SettingsTab: CGFloat] = [.general: 1700, .account: 1300, .mcp: 840]
         for tab in SettingsTab.allCases {
             model.settingsTab = tab
-            png(NSHostingView(rootView: StudioView(model: model)), size: NSSize(width: shotWidth, height: 740), to: dir.appendingPathComponent("settings-\(tab.rawValue).png"))
+            let height = tallTab[tab] ?? 740
+            SettingsDialog.maxHeight = tallTab[tab] == nil ? 600 : height - 56
+            png(NSHostingView(rootView: StudioView(model: model)), size: NSSize(width: shotWidth, height: height), to: dir.appendingPathComponent("settings-\(tab.rawValue).png"))
         }
+        SettingsDialog.maxHeight = 600
         model.settingsTab = nil
+
+        // The Local AI page at each point a new download can be at, and Home with the banner for someone who has not set it up.
+        let aiStates: [(String, LocalModel.Status, [String])] = [
+            ("not-installed", .notInstalled, []),
+            ("not-running", .notRunning, []),
+            ("model-missing", .missingModel(LocalModel.recommended), ["llama3.2:3b"]),
+            ("ready", .ready(LocalModel.recommended), [LocalModel.recommended, "llama3.2:3b"]),
+        ]
+        for (name, st, found) in aiStates {
+            model.aiStatus = st
+            model.aiModels = found
+            model.page = .localModel
+            png(NSHostingView(rootView: StudioView(model: model)), size: NSSize(width: shotWidth, height: 1500), to: dir.appendingPathComponent("localmodel-\(name).png"))
+        }
+        model.aiStatus = .notInstalled
+        model.aiModels = []
+        model.page = .home
+        png(NSHostingView(rootView: StudioView(model: model)), size: NSSize(width: shotWidth, height: 740), to: dir.appendingPathComponent("home-local-ai-banner.png"))
+        model.aiStatus = .ready(LocalModel.recommended)
+        model.page = .home
 
         let states: [(String, (PillModel) -> Void)] = [
             ("idle", { _ in }),

@@ -2,13 +2,13 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-// Learning from your own typing, and showing whether FreeFlow is getting better for you.
+// Learning from your own typing, and showing whether Purrscribe is getting better for you.
 //
-// FreeFlow already learns when you fix a word in text it typed. This adds, once you switch it on, the fixes you make in your
+// Purrscribe already learns when you fix a word in text it typed. This adds, once you switch it on, the fixes you make in your
 // own typing: you type a name wrongly, backspace and write it again. It does not record keystrokes. It looks at the line you are
 // on every half second, and only when a word on that line was replaced by an unusual word (a name, a product, jargon), and it is a clear spelling fix or has been seen twice, does it
 // remember the spelling, which is then given to the speech engine as a hint. No text is kept, only that word. Password fields,
-// password managers, terminals and FreeFlow itself are never looked at.
+// password managers, terminals and Purrscribe itself are never looked at.
 
 enum TypingRules {
     static let skipPrefixes = Redact.neverRecord + ["com.apple.terminal", "com.googlecode.iterm2", "dev.warp", "com.mitchellh.ghostty",

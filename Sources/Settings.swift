@@ -41,6 +41,17 @@ enum SpeechEngine: String, CaseIterable {
 }
 
 /// Light, dark royal purple, or whatever the Mac is set to.
+/// The two colour schemes (10 Nov 2026). Dreamy is the Rhythme lavender and plum; Sunset is cream, butter yellow, apricot and
+/// espresso, taken from the coats of ginger, cream and black cats. Both have a light and a dark look and both go with the cat pictures.
+enum Colorway: String, CaseIterable {
+    case dreamy, sunset
+
+    var chipTitle: String { self == .dreamy ? "Dreamy" : "Sunset" }
+
+    /// Read every time a colour is drawn (see RT), so it lives in memory; Settings.colorway keeps it and the saved choice in step.
+    static var current: Colorway = Settings.shared.colorway
+}
+
 enum AppearanceChoice: String, CaseIterable {
     case system, light, dark
 
@@ -48,7 +59,7 @@ enum AppearanceChoice: String, CaseIterable {
         switch self {
         case .system: return "Match my Mac"
         case .light: return "Light"
-        case .dark: return "Dark purple"
+        case .dark: return Colorway.current == .sunset ? "Dark brown" : "Dark purple"
         }
     }
 
@@ -175,6 +186,30 @@ final class Settings {
         set { d.set(newValue, forKey: "catTheme") }
     }
 
+    /// A little cat runs along the top of the window (10 Nov 2026). On by default with the cat look.
+    /// The cats that live on the strip (names from CatRunnerState.names, up to three).
+    var catRoster: [String] {
+        get { d.stringArray(forKey: "catRoster") ?? CatRunnerState.defaultRoster }
+        set { d.set(newValue, forKey: "catRoster") }
+    }
+
+    var catRunner: Bool {
+        get { d.object(forKey: "catRunner") as? Bool ?? true }
+        set { d.set(newValue, forKey: "catRunner") }
+    }
+
+    /// How big the cats on the strip are drawn (11 Nov 2026): small, medium (the usual) or large.
+    var catSize: CatSize {
+        get { CatSize.from(d.string(forKey: "catSize")) }
+        set { d.set(newValue.rawValue, forKey: "catSize") }
+    }
+
+    /// Dreamy (lavender, the default) or Sunset (cream and apricot).
+    var colorway: Colorway {
+        get { Colorway(rawValue: d.string(forKey: "colorway") ?? "") ?? .dreamy }
+        set { d.set(newValue.rawValue, forKey: "colorway"); Colorway.current = newValue }
+    }
+
     var appearance: AppearanceChoice {
         get { AppearanceChoice(rawValue: d.string(forKey: "appearance") ?? "") ?? .system }
         set { d.set(newValue.rawValue, forKey: "appearance") }
@@ -191,7 +226,7 @@ final class Settings {
         set { d.set(newValue, forKey: "tapToToggle") }
     }
 
-    /// A Dock icon all the time, not only while the window is open. Off by default (FreeFlow lives in the menu bar).
+    /// A Dock icon all the time, not only while the window is open. Off by default (Purrscribe lives in the menu bar).
     var showInDock: Bool {
         get { d.bool(forKey: "showInDock") }
         set { d.set(newValue, forKey: "showInDock") }
@@ -234,7 +269,7 @@ final class Settings {
         set { d.set(newValue, forKey: "hermesAgent") }
     }
 
-    /// How many recordings to keep (the newest), how many days to keep them (0 = no age limit), and where (empty = FreeFlow's own folder).
+    /// How many recordings to keep (the newest), how many days to keep them (0 = no age limit), and where (empty = Purrscribe's own folder).
     static let takesLimitChoices = [25, 100, 500, 2000]
     static let takesDaysChoices = [0, 7, 30, 90]
     var takesLimit: Int {
@@ -254,8 +289,8 @@ final class Settings {
         return p.isEmpty ? Paths.takes : URL(fileURLWithPath: p, isDirectory: true)
     }
 
-    /// Learn words from the corrections you make to text FreeFlow typed. On by default; the pairs stay in learned.txt.
-    /// Learn from fixes made in your own typing, not only in text FreeFlow typed. Off until you switch it on.
+    /// Learn words from the corrections you make to text Purrscribe typed. On by default; the pairs stay in learned.txt.
+    /// Learn from fixes made in your own typing, not only in text Purrscribe typed. Off until you switch it on.
     var learnFromTyping: Bool {
         get { d.bool(forKey: "learnFromTyping") }
         set { d.set(newValue, forKey: "learnFromTyping") }
@@ -312,7 +347,7 @@ final class Settings {
     }
 
     var aiModel: String {
-        get { d.string(forKey: "aiModel") ?? "qwen3.5:9b" }
+        get { d.string(forKey: "aiModel") ?? LocalModel.recommended }
         set { d.set(newValue, forKey: "aiModel") }
     }
 
@@ -353,7 +388,7 @@ final class Settings {
         set { d.set(newValue, forKey: "shareUsage") }
     }
 
-    /// What FreeFlow does when it notices you are in a call: nothing, ask, or start taking notes after a short countdown.
+    /// What Purrscribe does when it notices you are in a call: nothing, ask, or start taking notes after a short countdown.
     var meetingMode: MeetingMode {
         get { MeetingMode(rawValue: d.string(forKey: "meetingMode") ?? "") ?? .auto }
         set { d.set(newValue.rawValue, forKey: "meetingMode") }
@@ -480,12 +515,12 @@ final class Settings {
 
 /// Opt-in saved recordings, for comparing speech engines on your own voice. Local only.
 enum TakeStore {
-    /// A file FreeFlow wrote: 20261109-185331-01-whisper.wav or .json. Anything else in the folder is never touched.
+    /// A file Purrscribe wrote: 20261109-185331-01-whisper.wav or .json. Anything else in the folder is never touched.
     static func isTakeFile(_ name: String) -> Bool {
         name.range(of: #"^\d{8}-\d{6}-\d{2}-[A-Za-z0-9_.-]+\.(wav|json)$"#, options: .regularExpression) != nil
     }
 
-    /// Removes every recording FreeFlow wrote in the folder (the folder itself and other files stay). The number removed.
+    /// Removes every recording Purrscribe wrote in the folder (the folder itself and other files stay). The number removed.
     @discardableResult
     static func deleteAll(in dir: URL) -> Int {
         let fm = FileManager.default

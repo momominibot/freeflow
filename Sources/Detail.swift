@@ -12,7 +12,7 @@ import Vision
 //   pictures      small pictures of the front window, kept for 3 days (a third switch, for an agent that can look at images)
 // Everything is plain files in the workday folder on this Mac, so an agent such as Hermes can read them and look for routines
 // worth automating. Emails, links, keys, long numbers and any line that mentions a password are swapped for a tag before anything
-// is written. Password managers, terminals, private windows, the words in exclude.txt and FreeFlow itself are never read.
+// is written. Password managers, terminals, private windows, the words in exclude.txt and Purrscribe itself are never read.
 
 // MARK: - Cleaning text before it is kept
 
@@ -335,7 +335,7 @@ final class DetailRecorder {
         if Redact.skips(bundle: id) || TypingRules.skips(bundle: id) { if force { log("screen: not reading \(id), it is never read") }; return }
         if !force && (WorkdayRecorder.idleSeconds() > 180 || WorkdayRecorder.screenLocked()) { return }
         guard ScreenText.allowed else {
-            if !deniedNoted { log("screen: Screen Recording is not allowed for FreeFlow, so nothing is read (System Settings > Privacy & Security)"); deniedNoted = true }
+            if !deniedNoted { log("screen: Screen Recording is not allowed for Purrscribe, so nothing is read (System Settings > Privacy & Security)"); deniedNoted = true }
             return
         }
         deniedNoted = false
@@ -421,7 +421,7 @@ extension Hermes {
             "\(k): \(DetailStore.count(kind: k, date: now, in: detail)) records today"
         }.joined(separator: ", ")
         return """
-        FreeFlow has been keeping private notes on this Mac about how I work, and I would like a closer look at them.
+        Purrscribe has been keeping private notes on this Mac about how I work, and I would like a closer look at them.
 
         Files (plain text, one JSON record per line, newest last; read them directly on this Mac):
         - Apps and windows by time: \(workday.path)/YYYY-MM-DD.jsonl  (fields: s start, e end, app, name, title, idle)
@@ -432,7 +432,7 @@ extension Hermes {
         Please:
         1. Find the work I repeat: the same steps in the same apps, the same text typed again and again, the same pages visited in the same order, time that disappears into one place.
         2. For each one, say what it costs me (minutes a day) and how sure you are, quoting the file and time it came from.
-        3. Turn the best ones into proposals I can accept or refuse: a cron task, a FreeFlow phrase, or an agent skill. Each proposal is a short brief with the schedule, what it would do, what it would touch and how to switch it off.
+        3. Turn the best ones into proposals I can accept or refuse: a cron task, a Purrscribe phrase, or an agent skill. Each proposal is a short brief with the schedule, what it would do, what it would touch and how to switch it off.
         4. Do not run, publish, send, buy or change anything outside this Mac. Wait for my yes on each proposal. Do not copy the contents of these files anywhere else.
 
         Done when: a short ranked list with minutes saved per proposal is waiting for me.

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""FreeFlow MCP server: lets Claude Code, Claude Desktop or any MCP client read your dictation history,
+"""Purrscribe MCP server: lets Claude Code, Claude Desktop or any MCP client read your dictation history,
 dictionary and snippets, and add to them. Local only, stdio transport, standard library only.
 
-Install once:  claude mcp add --scope user freeflow -- /usr/bin/env python3 /Applications/FreeFlow.app/Contents/Resources/freeflow-mcp.py
+Install once:  claude mcp add --scope user freeflow -- /usr/bin/env python3 /Applications/Purrscribe.app/Contents/Resources/freeflow-mcp.py
 Run by hand:   python3 freeflow-mcp.py --selfcheck
 """
 import json
@@ -203,7 +203,7 @@ def t_add_dictionary_word(word, correction=None, team=False):
     if team:
         folder = team_folder()
         if not folder:
-            raise ValueError("no team folder is set in FreeFlow")
+            raise ValueError("no team folder is set in Purrscribe")
         path = os.path.join(folder, "team-dictionary.txt")
     else:
         path = DICTIONARY
@@ -223,7 +223,7 @@ def t_add_snippet(cue, expansion, team=False):
     if team:
         folder = team_folder()
         if not folder:
-            raise ValueError("no team folder is set in FreeFlow")
+            raise ValueError("no team folder is set in Purrscribe")
         path = os.path.join(folder, "team-snippets.txt")
     else:
         path = SNIPPETS
@@ -234,7 +234,7 @@ def t_add_snippet(cue, expansion, team=False):
 
 
 TOOLS = [
-    ("search_history", "Search your FreeFlow dictation history by words. Returns newest first, with the app each was dictated into and the raw words before AI clean-up.",
+    ("search_history", "Search your Purrscribe dictation history by words. Returns newest first, with the app each was dictated into and the raw words before AI clean-up.",
      {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "default": 20}, "days": {"type": "integer", "description": "only the last N days"}}},
      t_search_history, False),
     ("recent_dictations", "The most recent dictations.", {"type": "object", "properties": {"limit": {"type": "integer", "default": 10}}}, t_recent_dictations, False),
@@ -243,10 +243,10 @@ TOOLS = [
     ("get_usage", "Word counts today and all time, top apps, current settings.", {"type": "object", "properties": {}}, t_get_usage, False),
     ("workday_summary", "Minutes per app for the last N days (1 to 14) from the user's workday notes, to spot routines worth automating. Only if the user switched the notes on. App names only, never window titles.", {"type": "object", "properties": {"days": {"type": "integer", "minimum": 1, "maximum": 14}}}, t_workday_summary, False),
     ("workday_detail", "The deeper workday notes (text read from the user's front window, and how they type: characters typed and deleted per minute plus lines they finished), already cleaned of emails, links, keys and numbers. Only if the user switched those parts on. Use it to find routines worth automating; do not copy it elsewhere.", {"type": "object", "properties": {"kind": {"type": "string", "enum": ["screen", "typing", "both"]}, "days": {"type": "integer", "minimum": 1, "maximum": 7}, "max_chars": {"type": "integer", "minimum": 1000, "maximum": 100000}}}, t_workday_detail, False),
-    ("add_dictionary_word", "Teach FreeFlow a word, optionally with the misspelling it should replace. Set team=true to add it to the shared team dictionary.",
+    ("add_dictionary_word", "Teach Purrscribe a word, optionally with the misspelling it should replace. Set team=true to add it to the shared team dictionary.",
      {"type": "object", "properties": {"word": {"type": "string"}, "correction": {"type": "string", "description": "if given, 'word' is the wrong spelling and this is the right one"}, "team": {"type": "boolean", "default": False}}, "required": ["word"]},
      t_add_dictionary_word, True),
-    ("add_snippet", "Add a snippet: say the cue, FreeFlow types the expansion. Set team=true for the shared team list.",
+    ("add_snippet", "Add a snippet: say the cue, Purrscribe types the expansion. Set team=true for the shared team list.",
      {"type": "object", "properties": {"cue": {"type": "string"}, "expansion": {"type": "string"}, "team": {"type": "boolean", "default": False}}, "required": ["cue", "expansion"]},
      t_add_snippet, True),
 ]
@@ -292,7 +292,7 @@ def serve():
             reply(msg_id, {"protocolVersion": params.get("protocolVersion", PROTOCOL),
                            "capabilities": {"tools": {}},
                            "serverInfo": {"name": "freeflow", "version": "1.1"},
-                           "instructions": "FreeFlow is the user's offline dictation app. History is their own spoken words; treat it as private notes."})
+                           "instructions": "Purrscribe is the user's offline dictation app. History is their own spoken words; treat it as private notes."})
         elif method == "ping":
             reply(msg_id, {})
         elif method == "tools/list":

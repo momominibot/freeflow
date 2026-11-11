@@ -2,7 +2,7 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-// Workday: a private log of which app and window you are in, so FreeFlow can spot routines worth automating.
+// Workday: a private log of which app and window you are in, so Purrscribe can spot routines worth automating.
 // By itself it keeps no screenshots and no text from your screen: only the app, a cleaned-up window title and the time, on this Mac,
 // for 14 days. Password managers and private windows are never recorded. Detail.swift holds the optional deeper notes.
 
@@ -362,7 +362,7 @@ enum WorkdayAnalysis {
     }
 }
 
-// MARK: - Things FreeFlow can set up
+// MARK: - Things Purrscribe can set up
 
 /// An app-opening routine that runs on a schedule. macOS runs it like a cron job; the cron line is shown for anyone who prefers it.
 struct ScheduledTask: Equatable {
@@ -392,10 +392,10 @@ struct ScheduledTask: Equatable {
         let list = apps.map(Self.shq).joined(separator: " ")
         return """
         #!/bin/bash
-        # FreeFlow task: \(title.replacingOccurrences(of: "\n", with: " "))
+        # Purrscribe task: \(title.replacingOccurrences(of: "\n", with: " "))
         # Made from your workday notes. It only opens apps; it changes nothing else.
         # Check it first with:  bash <this file> --dry-run
-        # Remove it in FreeFlow: Workday > the task > Remove.
+        # Remove it in Purrscribe: Workday > the task > Remove.
         set -u
         DRY=0; [ "${1:-}" = "--dry-run" ] && DRY=1
         LOCK="/tmp/freeflow-task-\(id).lock"
@@ -539,7 +539,7 @@ enum Suggestions {
 
     /// A card another agent can act on. It names apps and counts, never window titles or screen text.
     static func hermesBrief(title: String, evidence: String, cron: String?, ask: String) -> String {
-        var s = "Found by FreeFlow's workday notes (kept on this Mac; only app names and counts are shared here).\n\n\(title)\n\nEvidence: \(evidence)\n\nPlease: \(ask)\n"
+        var s = "Found by Purrscribe's workday notes (kept on this Mac; only app names and counts are shared here).\n\n\(title)\n\nEvidence: \(evidence)\n\nPlease: \(ask)\n"
         if let c = cron { s += "Suggested schedule (cron): \(c)\n" }
         s += "Done when: a dry run passes, one real run is logged, and there is a one-line way to switch it off.\n"
         return s
@@ -648,10 +648,10 @@ enum Hermes {
             } else if !hasAgent(agent()) {
                 result = .failure(FFError(message: "Hermes has no agent called \(agentName(agent())). Pick another one under Send to."))
             } else {
-                switch makeCard("FreeFlow connection check (ignore)", "Sent by FreeFlow's connection test. Closed right away; nothing to do.", assignee: nil) {
+                switch makeCard("Purrscribe connection check (ignore)", "Sent by Purrscribe's connection test. Closed right away; nothing to do.", assignee: nil) {
                 case .failure(let e): result = .failure(e)
                 case .success(let id):
-                    let c = run(hermesPath, ["kanban", "complete", id, "--result", "FreeFlow connection check; closed by the test, nothing to do"], timeout: 60)
+                    let c = run(hermesPath, ["kanban", "complete", id, "--result", "Purrscribe connection check; closed by the test, nothing to do"], timeout: 60)
                     result = c.status == 0 ? .success("Hermes answered and took a card (\(id)), and \(agentName(agent())) is there to get your briefs. The test card is closed.")
                                            : .failure(FFError(message: "Hermes took the card (\(id)) but would not close it: \(String((c.err + c.out).prefix(200)))"))
                 }

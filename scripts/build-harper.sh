@@ -5,7 +5,7 @@
 #   scripts/build-harper.sh           all three (the iPhone ones need `rustup target add` once; the script does it)
 #   scripts/build-harper.sh macos     only the Mac one (also: ios, iossim)
 #
-# FreeFlow builds without it (a smaller built-in checker is used then); with it you get Harper's few hundred rules.
+# Purrscribe builds without it (a smaller built-in checker is used then); with it you get Harper's few hundred rules.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD

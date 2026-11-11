@@ -1,0 +1,37 @@
+Third-party pictures in this folder
+===================================
+
+Most of the pictures here are shapes from Simple Icons (CC0 1.0, https://simpleicons.org), drawn in each brand's own
+colour by scripts/art/make_app_logos.sh. CC0 asks for nothing; they are listed so it is clear where they came from.
+The names and marks belong to their owners. Purrscribe shows them only to say which app a tile is for.
+
+hermes.png
+----------
+The Hermes Agent app icon, taken from assets/icon-master.svg in https://github.com/NousResearch/hermes-agent
+(commit c2b69de66d84, 2 October 2026) and scaled to a 192 px picture. It is used under the MIT licence printed below.
+"Hermes Agent", the Nous Research name and its artwork remain Nous Research's. Purrscribe shows the picture only to
+say it works with Hermes Agent, and is not made or endorsed by Nous Research.
+
+The licence, copied as it is from https://github.com/NousResearch/hermes-agent/blob/main/LICENSE :
+
+MIT License
+
+Copyright (c) 2025 Nous Research
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

@@ -28,7 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var studio: StudioWindowController?
     private lazy var meetings = MeetingController(
         overlay: overlay,
-        transcribe: { [weak self] url, done in self?.transcribeForNotes(url, done) ?? done(.failure(FFError(message: "FreeFlow is closing"))) },
+        transcribe: { [weak self] url, done in self?.transcribeForNotes(url, done) ?? done(.failure(FFError(message: "Purrscribe is closing"))) },
         cleanup: { raw, quiet in
             TextCleaner.clean(raw, removeFillers: false, vocab: Personalization.load().vocab, quiet: quiet)
         })
@@ -38,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let unsent = UnsentCard()
     private let typing = TypingLearner()
     private lazy var files = FileTranscriber(
-        transcribe: { [weak self] url, done in self?.transcribeForNotes(url, done) ?? done(.failure(FFError(message: "FreeFlow is closing"))) },
+        transcribe: { [weak self] url, done in self?.transcribeForNotes(url, done) ?? done(.failure(FFError(message: "Purrscribe is closing"))) },
         cleanup: { raw in TextCleaner.clean(raw, removeFillers: false, vocab: Personalization.load().vocab, quiet: false) })
 
     private enum Mode { case dictate, command }
@@ -68,7 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var aiNoted = false
     private var installingQwen = false
 
-    /// Watches the text box FreeFlow just typed into, to learn from the words you fix.
+    /// Watches the text box Purrscribe just typed into, to learn from the words you fix.
     private lazy var corrections: CorrectionWatcher = {
         let w = CorrectionWatcher()
         w.onLearned = { [weak self] pairs in self?.announceLearned(pairs) }
@@ -78,7 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let tapThreshold: TimeInterval = 0.3
     private static let maxLength: TimeInterval = 20 * 60
 
-    /// Clicking the Dock icon, or opening FreeFlow from Spotlight or Launchpad while it is running, shows its window.
+    /// Clicking the Dock icon, or opening Purrscribe from Spotlight or Launchpad while it is running, shows its window.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         openStudio(nil)
         return true
@@ -147,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             object: nil, suspensionBehavior: .deliverImmediately)
 
         // Check of the whole meeting path inside the real app, which has its own microphone permission:
-        //   open -n -a FreeFlow --args --meeting-selftest 25
+        //   open -n -a Purrscribe --args --meeting-selftest 25
         if let i = CommandLine.arguments.firstIndex(of: "--meeting-selftest"), i + 1 < CommandLine.arguments.count {
             let secs = Double(CommandLine.arguments[i + 1]) ?? 25
             log("meeting selftest: starting for \(secs)s")
@@ -207,7 +207,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case "hermes:ping":
             // a real card to the chosen agent with a harmless one-word job, to see the whole route work (runs on the local model)
             DispatchQueue.global().async {
-                let r = Hermes.send("FreeFlow connection test (ignore)", "Reply with the single word OK. Do not use any tools and do not change anything. This is only a connection test from FreeFlow.")
+                let r = Hermes.send("Purrscribe connection test (ignore)", "Reply with the single word OK. Do not use any tools and do not change anything. This is only a connection test from Purrscribe.")
                 DispatchQueue.main.async {
                     switch r {
                     case .success(let out): self.log("hermes: ping sent. \(out)")
@@ -239,7 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case "meeting:start": self.meetings.startNow()
         case "meeting:stop": self.meetings.stop()
         case "paste":
-            self.pending.append(Outcome(text: "Paste test from FreeFlow.", raw: "", mode: "light", app: nil))
+            self.pending.append(Outcome(text: "Paste test from Purrscribe.", raw: "", mode: "light", app: nil))
             self.pumpDeliveries()
         default:
             // Checks and screenshots: "home:<page>" opens the window, "pill:<state>[:text]" shows the bar.
@@ -400,7 +400,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         if m == .command, !ai.cachedAvailable, !ai.isAvailable() {
-            overlay.flash("Command Mode needs the local AI · start Ollama (menu: AI status)", seconds: 3)
+            overlay.flash("Command Mode needs the local AI · Help › Set up the local AI", seconds: 3)
             return
         }
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
@@ -569,7 +569,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard level == .medium, !snippetHit, style != .plain || mode != nil, ai.cachedAvailable || ai.isAvailable() else {
             if level == .medium, !aiNoted, !ai.cachedAvailable, style != .plain || mode != nil, !snippetHit {
                 aiNoted = true
-                overlay.flash("Local AI not running · using rule-based clean-up (menu: AI status)", seconds: 3)
+                overlay.flash("Local AI not ready · using rule-based clean-up (Help › Set up the local AI)", seconds: 3)
             }
             if level == .medium { outcome.mode = "light" }
             return done(id, outcome, file: take.url)
@@ -668,7 +668,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard AXIsProcessTrusted() else {
             Inserter.copy(o.text)
             overlay.flash("Copied · press ⌘V to paste (allow Accessibility to type automatically)", seconds: 3)
-            showUnsent(o, reason: "FreeFlow is not allowed to type into apps yet (System Settings › Privacy & Security › Accessibility). The words are copied: press ⌘V where you want them.", copied: true)
+            showUnsent(o, reason: "Purrscribe is not allowed to type into apps yet (System Settings › Privacy & Security › Accessibility). The words are copied: press ⌘V where you want them.", copied: true)
             return completion()
         }
         // The result belongs to the app you were in when you spoke. If you have since switched, do not type into the wrong window.
@@ -744,7 +744,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             timer.invalidate()
             self.installHotkeys()
             self.refreshIcon()
-            self.overlay.flash("FreeFlow is ready · \(self.settings.startPhrase), talk, \(self.settings.doubleTapToStart ? "double-tap" : "tap") again", seconds: 3)
+            self.overlay.flash("Purrscribe is ready · \(self.settings.startPhrase), talk, \(self.settings.doubleTapToStart ? "double-tap" : "tap") again", seconds: 3)
         }
     }
 
@@ -814,12 +814,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return img
     }
 
-    /// The Dock icon follows the look: the bundle's cat icon, or the pearly bubble when the plain look is chosen.
+    /// The Dock icon follows the look: the bundle's cat icon (Dreamy), the warm cat icon (Sunset), or the pearly bubble when the plain look is chosen.
     private func applyDockIcon() {
-        if settings.catTheme {
-            NSApp.applicationIconImage = nil
-        } else if let url = Bundle.main.resourceURL?.appendingPathComponent("Brand/logo-icon.png"), let bubble = NSImage(contentsOf: url) {
+        func brand(_ file: String) -> NSImage? {
+            Bundle.main.resourceURL.flatMap { NSImage(contentsOf: $0.appendingPathComponent("Brand/\(file)")) }
+        }
+        if !settings.catTheme, let bubble = brand("logo-icon.png") {
             NSApp.applicationIconImage = bubble
+        } else if Colorway.current == .sunset, let warm = brand("logo-icon-sunset.png") {
+            NSApp.applicationIconImage = warm
+        } else {
+            NSApp.applicationIconImage = nil
         }
     }
 
@@ -835,13 +840,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             image = faceIcon(talking: false, flat: false)
         }
-        image?.accessibilityDescription = "FreeFlow"
+        image?.accessibilityDescription = "Purrscribe"
         button.image = image
         button.appearsDisabled = !server.isReady && !isRecording
     }
 
     private func symbol(_ name: String) -> NSImage? {
-        let i = NSImage(systemSymbolName: name, accessibilityDescription: "FreeFlow")
+        let i = NSImage(systemSymbolName: name, accessibilityDescription: "Purrscribe")
         i?.isTemplate = true
         return i
     }
@@ -861,7 +866,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(info("\(settings.startPhrase.prefix(1).uppercased() + settings.startPhrase.dropFirst()) to start, \(settings.doubleTapToStart ? "double-tap" : "tap") again to finish"))
         menu.addItem(.separator())
 
-        menu.addItem(item("Open FreeFlow", #selector(openHome), symbol: "house"))
+        menu.addItem(item("Open Purrscribe", #selector(openHome), symbol: "house"))
+        // Until the rewrite model is there, the way to it is one click from the menu bar.
+        if !ai.cachedAvailable { menu.addItem(item("Set up the local AI…", #selector(openLocalModel), symbol: "cpu")) }
         if workday.running { menu.addItem(info("Workday notes are on (Workday page to switch off)")) }
         if detail.screenRunning { menu.addItem(info("Reading the text on my screen is on (Workday page)")) }
         if detail.typingRunning { menu.addItem(info("Noting how I type is on (Workday page)")) }
@@ -922,7 +929,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(item("Allow typing into apps…", #selector(openAccessibilitySettings), symbol: "keyboard"))
         }
         menu.addItem(.separator())
-        menu.addItem(item("Quit FreeFlow", #selector(quit), key: "q"))
+        menu.addItem(item("Quit Purrscribe", #selector(quit), key: "q"))
     }
 
     private func appName(_ bundleId: String) -> String {
@@ -1018,7 +1025,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// One of the built-in rewrites (shorter, friendlier ...) of the selection, refused if it changed a number or one of your words.
     private func runRewrite(_ mode: RewriteMode) {
-        guard ai.cachedAvailable || ai.isAvailable() else { return overlay.flash("Rewrites need the local AI (start Ollama)", seconds: 3) }
+        guard ai.cachedAvailable || ai.isAvailable() else { return overlay.flash("Rewrites need the local AI · Help › Set up the local AI", seconds: 3) }
         Inserter.readFocus { [weak self] focus in
             guard let self = self else { return }
             guard !focus.selection.isEmpty else { return self.overlay.flash("Select some text first, then choose \(mode.title)", seconds: 3) }
@@ -1041,7 +1048,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Applies a saved prompt to the text selected in the app in front, and puts the result in its place.
     private func runTransform(_ t: Transform) {
-        guard ai.cachedAvailable || ai.isAvailable() else { return overlay.flash("Rewrites need the local AI (start Ollama)", seconds: 3) }
+        guard ai.cachedAvailable || ai.isAvailable() else { return overlay.flash("Rewrites need the local AI · Help › Set up the local AI", seconds: 3) }
         Inserter.readFocus { [weak self] focus in
             guard let self = self else { return }
             guard !focus.selection.isEmpty else { return self.overlay.flash("Select some text first, then choose \(t.name)", seconds: 3) }
@@ -1068,6 +1075,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openHome() { openStudio(.home) }
+    @objc private func openLocalModel() { openStudio(.localModel) }
     @objc private func startMeetingNotes() { meetings.startNow() }
     @objc private func stopMeetingNotes() { meetings.stop() }
     @objc private func openSettingsPage() { openStudio(nil); studio?.model.openSettings() }
@@ -1151,8 +1159,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         prefs.target = self
         appMenu.addItem(prefs)
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide FreeFlow", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        let quitItem = NSMenuItem(title: "Quit FreeFlow", action: #selector(quit), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Hide Purrscribe", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        let quitItem = NSMenuItem(title: "Quit Purrscribe", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         appMenu.addItem(quitItem)
         appItem.submenu = appMenu
@@ -1263,7 +1271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         log("learned \(pairs.count) fix(es) from a correction")
     }
 
-    /// For apps that do not let FreeFlow read the text box, or a fix made later: edit the last dictation here.
+    /// For apps that do not let Purrscribe read the text box, or a fix made later: edit the last dictation here.
     @objc private func correctLast() {
         guard let last = lastOutcome, !last.text.isEmpty, last.mode != "command" else {
             overlay.flash("Nothing dictated yet to correct", seconds: 2)
@@ -1272,7 +1280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "Correct my last dictation"
-        alert.informativeText = "Fix the words that were wrong. FreeFlow remembers them next time. Change a word or two, not the whole sentence."
+        alert.informativeText = "Fix the words that were wrong. Purrscribe remembers them next time. Change a word or two, not the whole sentence."
         let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 460, height: 110))
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
@@ -1302,7 +1310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let f = LearnedFile.load()
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = "Forget everything FreeFlow learned?"
+        alert.messageText = "Forget everything Purrscribe learned?"
         alert.informativeText = "This removes \(f.fixes.count) fixes and \(f.terms.count) words learned from your corrections. Your own dictionary is not touched."
         alert.addButton(withTitle: "Forget")
         alert.addButton(withTitle: "Cancel")
@@ -1323,7 +1331,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.prompt = "Use this folder"
-        panel.message = "Pick a folder your whole team syncs (iCloud Drive, Dropbox, the NAS). FreeFlow keeps team-dictionary.txt, team-snippets.txt and team-styles.txt there."
+        panel.message = "Pick a folder your whole team syncs (iCloud Drive, Dropbox, the NAS). Purrscribe keeps team-dictionary.txt, team-snippets.txt and team-styles.txt there."
         if panel.runModal() == .OK, let url = panel.url {
             settings.teamFolder = url.path
             TeamFolder.prepare(url)

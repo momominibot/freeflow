@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installs the optional Qwen3-ASR speech engine for FreeFlow (Apple Silicon only).
+# Installs the optional Qwen3-ASR speech engine for Purrscribe (Apple Silicon only).
 # Everything lands in ~/Library/Application Support/FreeFlow/engines/qwen:
 #   a private Python environment (mlx-qwen3-asr, Apache-2.0) and the model (~4.7 GB, from Hugging Face).
 # Nothing is uploaded. Safe to run again: it only fills in what is missing.

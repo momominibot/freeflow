@@ -1,6 +1,6 @@
-# FreeFlow for people who build with AI
+# Purrscribe for people who build with AI
 
-Most FreeFlow users talk to coding agents all day (Claude Code, Cursor, Codex, Copilot). This note says what FreeFlow does for them, what others already built, and what we took from them. Written 10 Nov 2026.
+Most Purrscribe users talk to coding agents all day (Claude Code, Cursor, Codex, Copilot). This note says what Purrscribe does for them, what others already built, and what we took from them. Written 10 Nov 2026.
 
 ## What it does now
 
@@ -60,7 +60,7 @@ Official guidance we followed for the prompt shape: Anthropic's Claude Code best
 ## What we copied, and what we did not
 
 - **Copied the ideas, not the words.** We took the structure and method (goal first, only what was said, a check to run, code kept exactly, caller never answered for) and wrote every prompt fresh. VoiceInk is GPL v3, so none of its code or prompt text was used.
-- **Made our own:** the guard. The others trust the model; FreeFlow checks the result and refuses a rewrite that lost a file name, flag or number.
+- **Made our own:** the guard. The others trust the model; Purrscribe checks the result and refuses a rewrite that lost a file name, flag or number.
 - **Made our own:** it runs on the iPhone with Apple's on-device model, and on the Mac with the local model. No cloud, no key.
 
 ## Not built yet (and why)

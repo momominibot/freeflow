@@ -1,9 +1,9 @@
 import AppKit
 import ApplicationServices
 
-/// FreeFlow learns your words from your own fixes. Everything lives in learned.txt on this Mac.
+/// Purrscribe learns your words from your own fixes. Everything lives in learned.txt on this Mac.
 ///
-/// The loop: FreeFlow types text, you correct a word, `CorrectionWatcher` sees the change, `Learning.pairs`
+/// The loop: Purrscribe types text, you correct a word, `CorrectionWatcher` sees the change, `Learning.pairs`
 /// turns it into "heard -> meant" pairs, `LearnedFile` counts votes, and `Vocabulary.addLearned` feeds the
 /// result back to both speech engines (as hotwords in the prompt) and to the post-transcription swaps.
 enum Learning {
@@ -61,7 +61,7 @@ enum Learning {
 
     // MARK: - What did the user change?
 
-    /// Word-level "heard -> meant" pairs between what FreeFlow typed and what the text says now.
+    /// Word-level "heard -> meant" pairs between what Purrscribe typed and what the text says now.
     /// Only substitutions that look like a speech slip are returned: a rewrite, a number change or a
     /// sentence-start capital is the person writing, not the engine mishearing.
     static func pairs(original: String, edited: String) -> [Pair] {
@@ -147,7 +147,7 @@ enum Learning {
 
     // MARK: - Finding the typed text again
 
-    /// What surrounded the text FreeFlow typed, so it can be found again after the user edits around it.
+    /// What surrounded the text Purrscribe typed, so it can be found again after the user edits around it.
     struct Anchors {
         var prefix: String
         var suffix: String
@@ -236,7 +236,7 @@ struct LearnedFile {
     var terms: [Term] = []
 
     static let header = """
-    # Learned by FreeFlow from your corrections. This file stays on this Mac.
+    # Learned by Purrscribe from your corrections. This file stays on this Mac.
     # Delete a line to forget it. Changes apply to the next thing you dictate.
     # fix | what it heard | what you meant | times | last seen
     # term | word | times | last seen
@@ -359,7 +359,7 @@ struct LearnedFile {
     }
 }
 
-/// After FreeFlow types, reads that one text box for a while to see which words the user changed.
+/// After Purrscribe types, reads that one text box for a while to see which words the user changed.
 /// Skips password fields, keeps nothing but the word pairs, and does nothing without Accessibility.
 final class CorrectionWatcher {
     var onLearned: (([Learning.Pair]) -> Void)?

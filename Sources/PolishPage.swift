@@ -202,7 +202,7 @@ struct PolishPage: View {
             rewriteSection
             wordsSection
 
-            Text("The checker is Harper (Apache-2.0), built into FreeFlow, so what you write never leaves this Mac. Rewrites use the local AI and are refused if they change a number, one of your words or the language.")
+            Text("The checker is Harper (Apache-2.0), built into Purrscribe, so what you write never leaves this Mac. Rewrites use the local AI and are refused if they change a number, one of your words or the language.")
                 .font(Fonts.sans(12, .medium)).foregroundColor(RT.ink3)
         }
     }
@@ -258,7 +258,8 @@ struct PolishPage: View {
                     .buttonStyle(PrimaryButton(small: true))
                     .disabled(polish.rewriting || polish.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.aiOK)
                 if !model.aiOK {
-                    Text("Rewrites need the local AI. Start Ollama (see Help).").font(Fonts.sans(12.5, .medium)).foregroundColor(RT.ink3)
+                    Text("Rewrites need the local AI.").font(Fonts.sans(12.5, .medium)).foregroundColor(RT.ink3)
+                    Button("Set it up") { model.page = .localModel }.buttonStyle(GhostButton())
                 }
             }
             if !polish.rewriteError.isEmpty {

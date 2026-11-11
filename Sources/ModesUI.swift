@@ -73,7 +73,7 @@ struct ModesPage: View {
             .rtCard(padding: 20)
 
             if file.modes.isEmpty {
-                EmptyNote(text: "No tones yet. Without one, FreeFlow uses its built-in tone for each app: formal in Mail, casual in chat.", art: "modes")
+                EmptyNote(text: "No tones yet. Without one, Purrscribe uses its built-in tone for each app: formal in Mail, casual in chat.", art: "modes")
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(file.modes.enumerated()), id: \.element.id) { i, m in

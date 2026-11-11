@@ -5,7 +5,7 @@ import CoreMedia
 import ScreenCaptureKit
 import Darwin
 
-// Meeting notes: FreeFlow notices a call, offers to take notes (or starts by itself after a short countdown),
+// Meeting notes: Purrscribe notices a call, offers to take notes (or starts by itself after a short countdown),
 // writes down what you and the other people say, and stops when the call ends.
 // Same shape as Wispr Flow's Notetaker, but everything stays on this Mac and the audio is deleted as soon as it is written down.
 
@@ -155,7 +155,7 @@ enum MicWatch {
         return titles
     }
 
-    /// The call that is going on right now, if any, other than FreeFlow's own microphone use.
+    /// The call that is going on right now, if any, other than Purrscribe's own microphone use.
     static func currentCall() -> (name: String, bundleId: String)? {
         let me = Bundle.main.bundleIdentifier
         for c in clients() where c.pid != getpid() {

@@ -3,64 +3,82 @@ import AppKit
 import CoreText
 
 /// The Rhythme look: soft lavender paper, plum ink, blush and lilac accents (rhythme.app room.css and site.css).
-/// Every colour that sits on a page has a light and a dark royal purple value and follows the window's appearance.
+/// Every colour that sits on a page has a light and a dark value and follows the window's appearance. Each also has a Sunset pair
+/// (cream paper, espresso ink, apricot accents, warm brown at night) that is used when Settings > Colours is Sunset. The names
+/// "lilac" and "blush" stay for the accent roles in both: in Sunset lilac is apricot and blush is peach.
 enum RT {
-    static let paper = Color.dyn(0xF8F3FB, 0x180D31)
-    static let paper2 = Color.dyn(0xF1E9F7, 0x22134A)
-    static let card = Color.dyn(0xFFFFFF, 0x2B1A59)
-    static let ink = Color.dyn(0x3B2D52, 0xF3ECFF)
-    static let ink2 = Color.dyn(0x6F5F8C, 0xC5B5E6)
-    static let ink3 = Color.dyn(0x9A8CB3, 0xA798CE)
-    static let plum = Color.dyn(0x5A4274, 0xE4D7FB)
-    static let mauve = Color.dyn(0x7A5C96, 0xB99DE3)
-    static let lilac = Color.dyn(0xC9B6E6, 0x7459BB)
-    static let lilac2 = Color.dyn(0xE7DCF5, 0x3C2872)
-    static let blush = Color.dyn(0xF6C9D6, 0x9A5A92)
-    static let blush2 = Color.dyn(0xFBE3EA, 0x4B2552)
+    static let paper = Color.dyn(0xF8F3FB, 0x180D31, sunset: (0xFCF5E4, 0x1E1610))
+    static let paper2 = Color.dyn(0xF1E9F7, 0x22134A, sunset: (0xF5E9D0, 0x2A1F16))
+    static let card = Color.dyn(0xFFFFFF, 0x2B1A59, sunset: (0xFFFDF7, 0x35271C))
+    static let ink = Color.dyn(0x3B2D52, 0xF3ECFF, sunset: (0x4A3426, 0xFBF0DE))
+    static let ink2 = Color.dyn(0x6F5F8C, 0xC5B5E6, sunset: (0x7C6552, 0xE3CFB2))
+    static let ink3 = Color.dyn(0x9A8CB3, 0xA798CE, sunset: (0xA38C77, 0xBDA588))
+    static let plum = Color.dyn(0x5A4274, 0xE4D7FB, sunset: (0x6B4A33, 0xF6DDB8))
+    static let mauve = Color.dyn(0x7A5C96, 0xB99DE3, sunset: (0xB5703F, 0xE8B07C))
+    static let lilac = Color.dyn(0xC9B6E6, 0x7459BB, sunset: (0xF2C58A, 0xA8652F))
+    static let lilac2 = Color.dyn(0xE7DCF5, 0x3C2872, sunset: (0xFBE6BE, 0x4A3322))
+    static let blush = Color.dyn(0xF6C9D6, 0x9A5A92, sunset: (0xF5B8A2, 0xB86A52))
+    static let blush2 = Color.dyn(0xFBE3EA, 0x4B2552, sunset: (0xFCDCCD, 0x4F2C20))
     static let ok = Color.dyn(0x6BA88A, 0x86D6AE)
     static let warn = Color.dyn(0xD4A85A, 0xEEC47E)
-    static let high = Color.dyn(0xD4707A, 0xFF8E9C)
+    static let high = Color.dyn(0xD4707A, 0xFF8E9C, sunset: (0xC8604F, 0xF08A74))
 
-    // The floating bar is night plum on any wallpaper, so its colours never change with the appearance.
+    // The floating bar is night plum (night espresso in Sunset) on any wallpaper, so its colours never change with the appearance.
     static let cream = Color(hex: 0xFFF6EC)
     static let gold = Color(hex: 0xF3D49B)
     static let mint = Color(hex: 0xBFE3D4)
-    static let night = Color(hex: 0x2B1F44)
-    static let night2 = Color(hex: 0x4A3666)
-    static let pillLilac = Color(hex: 0xC9B6E6)
-    static let pillBlush = Color(hex: 0xF6C9D6)
+    static let night = Color.cw(0x2B1F44, 0x2E2118)
+    static let night2 = Color.cw(0x4A3666, 0x57402E)
+    static let pillLilac = Color.cw(0xC9B6E6, 0xF2C58A)
+    static let pillBlush = Color.cw(0xF6C9D6, 0xF5B8A2)
 
-    static let primary = LinearGradient(colors: [Color.dyn(0x7B5DB3, 0x7C5BCB), Color.dyn(0x5F4596, 0x5A3DAE)], startPoint: .topLeading, endPoint: .bottomTrailing)
+    /// White text sits on this, so the Sunset pair is a deep burnt orange (3.9:1 and above), not the pale apricot.
+    static let primary = LinearGradient(colors: [Color.dyn(0x7B5DB3, 0x7C5BCB, sunset: (0xCF6F35, 0xCB6B30)), Color.dyn(0x5F4596, 0x5A3DAE, sunset: (0xA94F22, 0xA84D21))], startPoint: .topLeading, endPoint: .bottomTrailing)
     static let soft = LinearGradient(colors: [lilac, blush], startPoint: .leading, endPoint: .trailing)
-    static let shadow = Color.dyn(0x5A4274, 0x000000, 0.18, 0.40)
+    static let shadow = Color.dyn(0x5A4274, 0x000000, 0.18, 0.40, sunset: (0x6B4A33, 0x000000))
     /// Card shadows, hairlines and the dimmed backdrop behind a dialog.
-    static let lift = Color.dyn(0x5A4274, 0x000000, 0.10, 0.35)
-    static let lift2 = Color.dyn(0x5A4274, 0x000000, 0.22, 0.50)
-    static let line = Color.dyn(0x6B528E, 0xB99DE3, 0.22, 0.26)
-    static let line2 = Color.dyn(0x6B528E, 0xB99DE3, 0.14, 0.18)
-    static let scrim = Color.dyn(0x2B1F44, 0x000000, 0.32, 0.55)
+    static let lift = Color.dyn(0x5A4274, 0x000000, 0.10, 0.35, sunset: (0x6B4A33, 0x000000))
+    static let lift2 = Color.dyn(0x5A4274, 0x000000, 0.22, 0.50, sunset: (0x6B4A33, 0x000000))
+    static let line = Color.dyn(0x6B528E, 0xB99DE3, 0.22, 0.26, sunset: (0x8A6648, 0xE8B07C))
+    static let line2 = Color.dyn(0x6B528E, 0xB99DE3, 0.14, 0.18, sunset: (0x8A6648, 0xE8B07C))
+    static let scrim = Color.dyn(0x2B1F44, 0x000000, 0.32, 0.55, sunset: (0x2A1D12, 0x000000))
     /// The window itself, for the part of the frame SwiftUI does not draw.
-    static let windowBackground = NSColor.dyn(0xF8F3FB, 0x180D31)
+    static let windowBackground = NSColor.dyn(0xF8F3FB, 0x180D31, sunset: (0xFCF5E4, 0x1E1610))
 
     static let radius: CGFloat = 22
     static let radiusSmall: CGFloat = 14
 }
 
 extension NSColor {
-    /// One colour for the light appearance and one for the dark, picked each time it is drawn.
-    static func dyn(_ light: UInt32, _ dark: UInt32, _ lightAlpha: CGFloat = 1, _ darkAlpha: CGFloat? = nil) -> NSColor {
+    /// One colour for the light appearance and one for the dark, picked each time it is drawn. `sunset` is the pair used when the
+    /// Sunset colourway is on; without it the colour is the same in both colourways.
+    static func dyn(_ light: UInt32, _ dark: UInt32, _ lightAlpha: CGFloat = 1, _ darkAlpha: CGFloat? = nil, sunset: (UInt32, UInt32)? = nil) -> NSColor {
         NSColor(name: nil) { ap in
             let isDark = ap.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            let h = isDark ? dark : light
+            var h = isDark ? dark : light
+            if let s = sunset, Colorway.current == .sunset { h = isDark ? s.1 : s.0 }
             return NSColor(srgbRed: CGFloat((h >> 16) & 0xFF) / 255, green: CGFloat((h >> 8) & 0xFF) / 255,
                            blue: CGFloat(h & 0xFF) / 255, alpha: isDark ? (darkAlpha ?? lightAlpha) : lightAlpha)
+        }
+    }
+
+    /// A colour that depends on the colourway only (the floating bar and the art tiles look the same in light and dark).
+    static func cw(_ dreamy: UInt32, _ sunset: UInt32, _ alpha: CGFloat = 1) -> NSColor {
+        NSColor(name: nil) { _ in
+            let h = Colorway.current == .sunset ? sunset : dreamy
+            return NSColor(srgbRed: CGFloat((h >> 16) & 0xFF) / 255, green: CGFloat((h >> 8) & 0xFF) / 255,
+                           blue: CGFloat(h & 0xFF) / 255, alpha: alpha)
         }
     }
 }
 
 extension Color {
-    static func dyn(_ light: UInt32, _ dark: UInt32, _ lightAlpha: Double = 1, _ darkAlpha: Double? = nil) -> Color {
-        Color(nsColor: NSColor.dyn(light, dark, CGFloat(lightAlpha), darkAlpha.map { CGFloat($0) }))
+    static func dyn(_ light: UInt32, _ dark: UInt32, _ lightAlpha: Double = 1, _ darkAlpha: Double? = nil, sunset: (UInt32, UInt32)? = nil) -> Color {
+        Color(nsColor: NSColor.dyn(light, dark, CGFloat(lightAlpha), darkAlpha.map { CGFloat($0) }, sunset: sunset))
+    }
+
+    static func cw(_ dreamy: UInt32, _ sunset: UInt32, opacity: Double = 1) -> Color {
+        Color(nsColor: NSColor.cw(dreamy, sunset, CGFloat(opacity)))
     }
 
     init(hex: UInt32, opacity: Double = 1) {
@@ -189,8 +207,12 @@ enum Art {
         return load("Brand/art/\(name).webp")
     }
 
-    /// A picture from the cat set only (the kitten for the logo, the full-figure heroes), nil if there is none.
-    static func catImage(_ name: String) -> NSImage? { load("Brand/art/cats/\(name).webp") }
+    /// A picture from the cat set only (the kitten for the logo, the full-figure heroes), nil if there is none. In the Sunset
+    /// colourway the cat-only set (assets/art/sunset: ginger, cream and black cats in warm tones) comes first.
+    static func catImage(_ name: String) -> NSImage? {
+        if Colorway.current == .sunset, let warm = load("Brand/art/sunset/\(name).webp") { return warm }
+        return load("Brand/art/cats/\(name).webp")
+    }
 
     /// A brand picture for the MCP page (assets/brand/apps), nil if there is none.
     static func appLogo(_ name: String) -> NSImage? { load("Brand/apps/\(name).png") }
@@ -222,7 +244,7 @@ struct ArtView: View {
                 // The pictures are painted for pale paper: their glass is see-through. On royal purple they sit on a pearly tile.
                 ZStack {
                     RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
-                        .fill(LinearGradient(colors: [Color(hex: 0xEFE6FB), Color(hex: 0xD8C7F1)], startPoint: .top, endPoint: .bottom))
+                        .fill(LinearGradient(colors: [Color.cw(0xEFE6FB, 0xFBEBD0), Color.cw(0xD8C7F1, 0xF2CDA4)], startPoint: .top, endPoint: .bottom))
                     pic.frame(width: size * 0.9, height: size * 0.9)
                 }
                 .frame(width: size, height: size)
@@ -235,7 +257,21 @@ struct ArtView: View {
     }
 }
 
-/// The FreeFlow logo: the pearly bubble with its face. Falls back to a drawn disc if the picture is missing.
+/// The Purrscribe wordmark: Baskerville SemiBold Italic, slightly cursive but easy to read (it ships with macOS and iOS), in the
+/// theme's ink so it follows Dreamy and Sunset, light and dark. It replaced the tilted cursive picture on 10 Nov 2026: the owner found that
+/// one too faint and too slanted to read, then asked for "slightly cursive but readable".
+struct Wordmark: View {
+    var size: CGFloat = 27
+    var color: Color = RT.plum
+
+    var body: some View {
+        Text("Purrscribe").font(.custom("Baskerville-SemiBoldItalic", fixedSize: size)).foregroundColor(color)
+            .lineLimit(1).fixedSize()
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// The Purrscribe logo: the pearly bubble with its face. Falls back to a drawn disc if the picture is missing.
 struct Emblem: View {
     var size: CGFloat = 34
     private static let logo: NSImage? = {
@@ -273,7 +309,7 @@ struct PrimaryButton: ButtonStyle {
             .padding(.horizontal, small ? 14 : 20)
             .padding(.vertical, small ? 8 : 11)
             .background(RoundedRectangle(cornerRadius: RT.radiusSmall, style: .continuous).fill(RT.primary))
-            .shadow(color: Color(hex: 0x7A5C96, opacity: 0.32), radius: 8, y: 4)
+            .shadow(color: Color.cw(0x7A5C96, 0xB5703F, opacity: 0.32), radius: 8, y: 4)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }

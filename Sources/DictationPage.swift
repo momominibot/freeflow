@@ -34,7 +34,8 @@ struct TipBanner<Content: View>: View {
             ZStack(alignment: .topTrailing) {
                 HStack(alignment: .center, spacing: 16) {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(title).font(Fonts.serif(25)).foregroundColor(RT.plum)
+                        // fixedSize: a long banner must wrap its title, never cut it to "Turn on free r..."
+                        Text(title).font(Fonts.serif(25)).foregroundColor(RT.plum).fixedSize(horizontal: false, vertical: true)
                         Text(text).font(Fonts.sans(13.5, .medium)).foregroundColor(RT.ink2).fixedSize(horizontal: false, vertical: true)
                         content
                     }
@@ -154,6 +155,7 @@ struct HomePage: View {
             if narrow { statsPanel }
             HStack(alignment: .top, spacing: 22) {
                 VStack(alignment: .leading, spacing: 18) {
+                    LocalAIBanner(model: model)
                     TipBanner(key: "tip.scratchpad", title: "Jot it down, don\u{2019}t type it",
                               text: "Start with \u{201C}note to self\u{201D} and the rest goes to your Jots instead of the app in front.",
                               art: "sleepy", model: model) {
@@ -197,6 +199,7 @@ struct HomePage: View {
                 if !narrow { statsPanel }
             }
         }
+        .onAppear { model.lookForLocalAI() }
     }
 
     private var statsPanel: some View {
@@ -257,7 +260,7 @@ struct HomePage: View {
         let all = HistoryReader.readAll()
         guard !all.isEmpty else { return }
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "FreeFlow dictations.\(ext)"
+        panel.nameFieldStringValue = "Purrscribe dictations.\(ext)"
         panel.allowedContentTypes = [UTType(filenameExtension: ext) ?? .plainText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let text: String

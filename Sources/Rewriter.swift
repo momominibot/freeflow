@@ -73,22 +73,16 @@ final class Rewriter {
         lock.lock()
         if !force, let (at, ok) = availableCache, Date().timeIntervalSince(at) < 20 { lock.unlock(); return ok }
         lock.unlock()
-        var ok = false
-        let done = DispatchSemaphore(value: 0)
-        var req = URLRequest(url: base.appendingPathComponent("api/tags"))
-        req.timeoutInterval = 1.5
+        // The same look the Local AI page takes (LocalModel.swift), so the menu, the pages and the typing path cannot disagree.
         let wanted = model
-        session.dataTask(with: req) { data, _, _ in
-            if let data = data, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let models = obj["models"] as? [[String: Any]] {
-                let names = models.compactMap { $0["name"] as? String }
-                ok = names.contains { $0 == wanted || $0 == wanted + ":latest" || $0.hasPrefix(wanted) }
-            }
-            done.signal()
-        }.resume()
-        _ = done.wait(timeout: .now() + 2)
-        lock.lock(); availableCache = (Date(), ok); lock.unlock()
+        let ok = LocalModel.installedNames().map { LocalModel.hasModel($0, wanted: wanted) } ?? false
+        note(available: ok)
         return ok
+    }
+
+    /// Remembers an answer someone else has just got (the Local AI page), so nothing shows the old one for the next 20 seconds.
+    func note(available ok: Bool) {
+        lock.lock(); availableCache = (Date(), ok); lock.unlock()
     }
 
     /// Last known answer without touching the network, for building menus on the main thread.

@@ -49,7 +49,7 @@ final class NoteSummarizer {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return completion("Couldn't open the note") }
         let transcript = MeetingFile.transcriptLines(text)
         guard TextCleaner.wordCount(transcript) >= Self.minWords else { return completion("Too short to summarise") }
-        guard Rewriter.shared.isAvailable() else { return completion("The local AI isn't running (start Ollama)") }
+        guard Rewriter.shared.isAvailable() else { return completion("The local AI isn't set up (Help › Set up the local AI)") }
         running.insert(id)
         changed()
         log("summary: writing notes for \(id), \(TextCleaner.wordCount(transcript)) words")
@@ -138,7 +138,7 @@ final class FileTranscriber {
             p.waitUntilExit()
             let parts = ((try? FileManager.default.contentsOfDirectory(atPath: work.path)) ?? []).filter { $0.hasSuffix(".wav") }.sorted()
             guard p.terminationStatus == 0, !parts.isEmpty else {
-                return finish(.failure(FFError(message: "That file has no sound FreeFlow can read")))
+                return finish(.failure(FFError(message: "That file has no sound Purrscribe can read")))
             }
             var entries: [MeetingFile.Entry] = []
             let total = parts.count
